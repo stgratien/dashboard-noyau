@@ -48,16 +48,20 @@ async function storeThumbnail(source: WindsorSource, path: string, remote: strin
   try { url = new URL(remote); } catch { return { reason: "adresse invalide" }; }
   const allowed = ["fbcdn.net", "cdninstagram.com", "tiktokcdn.com", "tiktokcdn-us.com", "tiktokcdn-eu.com", "byteoversea.com", "licdn.com", "tiktok.com", "ibytedtos.com"];
   if (url.protocol !== "https:" || !allowed.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`))) return { reason: `hôte non autorisé (${url.hostname})` };
+  let result: Response;
+  try { result = await fetch(url, { signal: AbortSignal.timeout(12000), redirect: "error" }); } catch (error) { return { reason: `${url.hostname} : ${failureText(error)}` }; }
+  const type = result.headers.get("content-type") ?? "";
+  if (!result.ok || !type.startsWith("image/")) return { reason: `${url.hostname} HTTP ${result.status} ${type || "sans type"}` };
   try {
-    const result = await fetch(url, { signal: AbortSignal.timeout(12000), redirect: "error" });
-    const type = result.headers.get("content-type") ?? "";
-    if (!result.ok || !type.startsWith("image/")) return { reason: `${url.hostname} HTTP ${result.status} ${type || "sans type"}` };
     const data = await result.arrayBuffer();
     if (data.byteLength > 10_000_000) return { reason: "image de plus de 10 Mo" };
     const saved = await db.storage.from(THUMBNAIL_BUCKET).upload(path, data, { contentType: type, upsert: true });
-    return saved.error ? { reason: "stockage refusé" } : { path };
-  } catch { return { reason: `${url.hostname} : réseau, délai ou redirection` }; }
+    return saved.error ? { reason: `stockage refusé : ${failureText(saved.error)}` } : { path };
+  } catch (error) { return { reason: `${url.hostname} : ${failureText(error)}` }; }
 }
+
+/** Cause d'un échec sans jamais citer d'adresse (elle porte une signature) : nom de l'erreur et début du message, toute URL remplacée. */
+const failureText = (error: unknown) => (error instanceof Error ? `${error.name} ${error.message.replace(/https?:\/\/\S+/g, "<url>").slice(0, 100)}`.trim() : "erreur inconnue");
 
 /** Vignette d'une publication : celle déjà stockée, sinon la première adresse fournie qui se télécharge ; la raison de chaque échec est journalisée (sans l'adresse). */
 async function thumbnail(source: WindsorSource, postId: string, remotes: string[], gaps?: string[]) {
