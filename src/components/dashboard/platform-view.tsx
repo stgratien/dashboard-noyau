@@ -12,7 +12,7 @@ import { AUDIENCE_VIEW_LABELS, audienceDefaultView, audienceSeries, audienceView
 import { storiesTotals, storyDelta, storyNote } from "@/lib/social-stories";
 import { definition, type KpiKey } from "@/lib/kpi-definitions";
 import { postStats, topPosts, flopPosts, formatOptions, sortRows, pageWindow, audienceBreakdowns, audiencePanels, formatLabel, paidAdStats, TABLE_PAGE_SIZE, type SortKey, type PostStats, type PostType } from "@/lib/top-posts";
-import { BRAND_COLORS, BigSection, Kpi, NAV_SCROLL, Panel, ReportRowLimit, navProps, navSlug, reportAttr, SectionTitle, type SocialData, type ViewPeriods, axis, axisNumber, budget, comparableDelta, coverageDetails, delta, eur, fmt, followerNote, nf, pct, shown, tip } from "@/components/dashboard/common";
+import { BRAND_COLORS, BigSection, MissingVisual, Kpi, NAV_SCROLL, Panel, ReportRowLimit, navProps, navSlug, reportAttr, SectionTitle, type SocialData, type ViewPeriods, axis, axisNumber, budget, comparableDelta, coverageDetails, delta, eur, fmt, followerNote, nf, pct, shown, tip } from "@/components/dashboard/common";
 
 export function InteractionLabel({
   x,
@@ -554,9 +554,7 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
                               className={cn("w-20 rounded-md object-cover", x.vertical ? "h-[120px]" : "h-20")}
                             />
                           ) : (
-                            <span className="grid h-20 w-20 place-items-center rounded-md bg-muted text-center text-[10px] text-muted-foreground">
-                              Visuel non disponible
-                            </span>
+                            <MissingVisual format={x.format} className="h-20 w-20" />
                           )}
                         </PostLink>
                         <div className="min-w-0">
@@ -739,9 +737,7 @@ export function TopPostCard({
                 className={cn("w-24 rounded-md object-cover", post.vertical ? "h-36" : "h-24")}
               />
             ) : (
-              <span className="grid h-24 w-24 place-items-center rounded-md bg-muted text-center text-[10px] text-muted-foreground">
-                Visuel non disponible
-              </span>
+              <MissingVisual format={post.format} className="h-24 w-24" />
             )}
           </PostLink>
           <div className="min-w-0 flex-1 space-y-1 text-sm">
@@ -839,9 +835,7 @@ export function FlopCard({
                     className="h-16 w-16 rounded-md object-cover"
                   />
                 ) : (
-                  <span className="grid h-16 w-16 place-items-center rounded-md bg-muted text-center text-[10px] text-muted-foreground">
-                    Visuel non disponible
-                  </span>
+                  <MissingVisual format={post.format} className="h-16 w-16" />
                 )}
               </PostLink>
               <div className="min-w-0 flex-1 space-y-0.5 text-sm">

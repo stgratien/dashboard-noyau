@@ -1,4 +1,5 @@
 import { createContext, useContext, type ReactNode } from "react";
+import { FileText, ImageOff, Image as ImageIcon, Images, Megaphone, MessageSquareText, Video, type LucideIcon } from "lucide-react";
 import { readSocialData } from "@/lib/social-data.functions";
 import { type RealTotals } from "@/lib/social-totals";
 import { changePercent, formatBudget, formatEuro, formatNumber, formatPercent, formatChangePercent, formatPoints, typographicMinus, plural, labelForValue } from "@/lib/dashboard-format";
@@ -28,6 +29,22 @@ export const eur = (n: number | null, d = 0) => formatEuro(n, d);
 export const budget = (n: number | null) => formatBudget(n);
 
 /** Palette de la marque pour les répartitions (bleu, bleu nuit, accent de la marque, nuances de bleu, gris-bleu). */
+const MISSING_VISUAL_ICONS: Record<string, LucideIcon> = { Photo: ImageIcon, "Vidéo": Video, Carrousel: Images, Album: Images, Document: FileText, "Publicité": Megaphone, Autre: MessageSquareText };
+/** Vignette de remplacement quand le réseau ne fournit aucune image (documents, sondages, textes sur LinkedIn...) : l'icône et le nom du format, plutôt qu'un simple texte d'absence. */
+export function MissingVisual({ format, className }: { format?: string | undefined; className?: string | undefined }) {
+  const Icon = (format && MISSING_VISUAL_ICONS[format]) || ImageOff;
+  return (
+    <span
+      role="img"
+      aria-label={`Visuel non disponible${format && format !== "Non disponible" ? ` : ${format}` : ""}`}
+      className={cn("flex flex-col items-center justify-center gap-1 rounded-md bg-muted text-center text-[10px] leading-tight text-muted-foreground", className)}
+    >
+      <Icon className="h-5 w-5" aria-hidden />
+      {format && format !== "Non disponible" ? <span>{format}</span> : null}
+    </span>
+  );
+}
+
 /** Palette des graphiques : les jetons --brand-second, --brand-sky et --brand-deep sont facultatifs (src/client/theme.css) ; sans eux, les valeurs de repli ci-dessous s'appliquent. */
 export const BRAND_COLORS = ["var(--primary)", "var(--brand-second, var(--heading))", "var(--brand-accent)", "var(--brand-sky, #4DA8E0)", "var(--brand-deep, #14497F)", "var(--muted-foreground)"];
 
