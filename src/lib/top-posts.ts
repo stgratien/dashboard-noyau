@@ -16,6 +16,15 @@ const FORMAT_ORDER = ['Photo', 'Vidéo', 'Carrousel', 'Album', 'Document', 'Autr
 /** Formats présents dans les lignes du tableau, dans l'ordre habituel (« Publications par format »), les formats inattendus à la fin. */
 export const formatOptions = (rows: PostStats[]) =>
   [...new Set(rows.map(r => r.format))].sort((a, b) => (FORMAT_ORDER.indexOf(a) + 1 || 99) - (FORMAT_ORDER.indexOf(b) + 1 || 99) || a.localeCompare(b, 'fr'));
+/**
+ * Texte d'une publication LinkedIn : retire le balisage du connecteur (hashtags « {hashtag|\#|mot} », mentions « @[Nom](urn:li:...) ») et les échappements
+ * (« \( », « \# »...) pour n'afficher que le texte lisible. Les autres réseaux ne portent pas ce balisage : leur texte reste tel quel.
+ */
+export const cleanPostText = (platform: string, text: string) =>
+  platform !== 'linkedin' ? text : text
+    .replace(/\{hashtag\|\\?#\|([^}]*)\}/g, '#$1')
+    .replace(/@\[([^\]]*)\]\(urn:li:[^)]*\)/g, '@$1')
+    .replace(/\\([\\(){}[\]<>#*_|~@])/g, '$1');
 /** Per-post figures; budget/CPM come only from ads linked to the post, never from account totals. */
 export function postStats(x: SocialPost) {
   const n = (k: string) => x.metrics[k] ?? null;
@@ -24,7 +33,7 @@ export function postStats(x: SocialPost) {
   const spend = x.sponsored && x.sponsored.spend > 0 ? x.sponsored.spend : null;
   const cpm = spend != null && x.sponsored && x.sponsored.impressions > 0 ? spend / x.sponsored.impressions * 1000 : null;
   return {
-    id: x.post_id, title: x.title || 'Publication', format: postFormat(x.platform, x.format), vertical: x.platform === 'tiktok' || x.format === 'Reel' || /\/reels?\//.test(x.permalink ?? ''),
+    id: x.post_id, title: cleanPostText(x.platform, x.title) || 'Publication', format: postFormat(x.platform, x.format), vertical: x.platform === 'tiktok' || x.format === 'Reel' || /\/reels?\//.test(x.permalink ?? ''),
     thumbnail_url: x.thumbnail_url ?? '', permalink: safePostUrl(x.platform, x.permalink),
     ts: Date.parse(x.published_at),
     date: new Date(x.published_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Paris' }),
