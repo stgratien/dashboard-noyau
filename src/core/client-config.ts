@@ -67,8 +67,11 @@ export interface ClientInput {
   sources: WindsorSource[];
   /** Onglets réseaux affichés. Défaut : les réseaux alimentés par les sources activées (voir PLATFORM_SOURCES). */
   networks?: PlatformId[];
-  /** Intégrations hors Windsor (scripts nocturnes). Défaut : activées toutes les deux. */
-  features?: { googleAds?: boolean; youtube?: boolean };
+  /**
+   * Intégrations hors Windsor (scripts nocturnes) et onglet Global. Défaut : Google Ads et YouTube activés ; `global` (vue « tous réseaux ») affiché
+   * dès qu'il y a plusieurs onglets réseaux, masqué sinon (le premier onglet réseau s'ouvre alors en premier).
+   */
+  features?: { googleAds?: boolean; youtube?: boolean; global?: boolean };
   /** Rapprochement annonce-publication par le nom de l'annonce : mots propres au client à ignorer en plus de la liste de base (« paris », nom de l'événement...). */
   ads?: { extraStopWords?: string[] };
   /** Rapport Google Slides. Sans `google`, le bouton « Générer un reporting » reste inactif. */
@@ -111,7 +114,7 @@ export interface Client {
   events: { editions: EventEdition[]; groupLabel: string };
   sources: WindsorSource[];
   networks: PlatformId[];
-  features: { googleAds: boolean; youtube: boolean };
+  features: { googleAds: boolean; youtube: boolean; global: boolean };
   ads: { extraStopWords: string[] };
   report: {
     google: { clientId: string; apiKey: string; appId: string; templateId: string } | null;
@@ -169,7 +172,7 @@ export function defineClient(input: ClientInput): Client {
     events: { editions, groupLabel: input.events?.groupLabel ?? "Éditions" },
     sources: input.sources,
     networks: ALL_PLATFORMS.filter((p) => networks.includes(p)),
-    features: { googleAds: input.features?.googleAds ?? true, youtube: input.features?.youtube ?? true },
+    features: { googleAds: input.features?.googleAds ?? true, youtube: input.features?.youtube ?? true, global: input.features?.global ?? networks.length > 1 },
     ads: { extraStopWords: input.ads?.extraStopWords ?? [] },
     report: {
       google: r.google ?? null,

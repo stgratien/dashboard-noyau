@@ -74,6 +74,9 @@ const ICONS: Record<Tab, typeof Facebook> = {
 const tabLabel = (t: Tab) =>
   t === "overview" ? "Global" : t === "google" ? "Google Ads" : t === "youtube" ? "YouTube" : t === "web" ? "Google Analytics" : (PLATFORMS.find((p) => p.id === t)?.name ?? t);
 
+/** Onglet d'ouverture : Global quand le client l'affiche (features.global), sinon son premier réseau. */
+const FIRST_TAB: Tab = client.features.global ? "overview" : (PLATFORMS[0]?.id ?? "overview");
+
 /** Onglets du dashboard : en ligne sous l'en-tête (petits écrans, ou « ?menu=haut »), en colonne à gauche sinon. */
 type NavSection = { id: string; label: string };
 
@@ -149,7 +152,7 @@ function TabNav({ tabs, tab, onSelect, vertical, sectionsByTab = {} }: { tabs: T
 function Dashboard() {
   const { menu } = Route.useSearch();
   const sideMenu = menu !== "haut";
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(FIRST_TAB);
   // Le menu latéral reste collé sous l'en-tête, dont la hauteur varie (alerte de synchronisation, retours à la ligne).
   const headerRef = useRef<HTMLElement>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -269,7 +272,7 @@ function Dashboard() {
     if (mode === "custom" && customComparison?.name && customComparison.start === next.start && customComparison.end === next.end) setMode("previous");
   };
 
-  const tabs = ["overview", ...PLATFORMS.map((p) => p.id), ...(youtube.data?.lastSuccess ? ["youtube"] : []), ...(client.features.googleAds ? ["google"] : [])] as Tab[];
+  const tabs = [...(client.features.global ? ["overview"] : []), ...PLATFORMS.map((p) => p.id),...(youtube.data?.lastSuccess ? ["youtube"] : []), ...(client.features.googleAds ? ["google"] : [])] as Tab[];
 
   return (
     <ComparisonLabel.Provider value={comparison.label}>
@@ -280,9 +283,9 @@ function Dashboard() {
               <div className="flex min-w-0 items-center gap-2">
                 <button
                   type="button"
-                  aria-label={`${client.brand.shortName} : retour à l’onglet Global`}
+                  aria-label={`${client.brand.shortName} : retour à l’onglet ${tabLabel(FIRST_TAB)}`}
                   onClick={() => {
-                    setTab("overview");
+                    setTab(FIRST_TAB);
                     window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
                   }}
                   className="brand-logo-wrap inline-flex shrink-0 cursor-pointer rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
