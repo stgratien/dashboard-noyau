@@ -1,0 +1,11 @@
+CREATE TABLE public.social_ad_daily (source text NOT NULL CHECK (source IN ('facebook','tiktok','linkedin')), platform text NOT NULL CHECK (platform IN ('facebook','instagram','tiktok','linkedin')), ad_id text NOT NULL, day date NOT NULL, impressions numeric NOT NULL CHECK (impressions >= 0), synced_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (source,platform,ad_id,day));
+GRANT SELECT ON public.social_ad_daily TO anon, authenticated;
+GRANT ALL ON public.social_ad_daily TO service_role;
+ALTER TABLE public.social_ad_daily ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Read allowed social ad delivery" ON public.social_ad_daily FOR SELECT TO anon, authenticated USING (true);
+CREATE INDEX social_ad_daily_period ON public.social_ad_daily(day,platform);
+CREATE TABLE public.social_ad_coverage (source text NOT NULL CHECK (source IN ('facebook','tiktok','linkedin')), day date NOT NULL, synced_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(source,day));
+GRANT SELECT ON public.social_ad_coverage TO anon, authenticated;
+GRANT ALL ON public.social_ad_coverage TO service_role;
+ALTER TABLE public.social_ad_coverage ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Read social ad coverage" ON public.social_ad_coverage FOR SELECT TO anon, authenticated USING (true);

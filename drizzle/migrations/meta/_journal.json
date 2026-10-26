@@ -1,0 +1,90 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1792148255519,
+      "tag": "0000_windsor_ingestion",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792148779767,
+      "tag": "0001_read_stored_publication_thumbnails",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792150891119,
+      "tag": "0002_social_ad_delivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792152344577,
+      "tag": "0003_manual_follower_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792153347756,
+      "tag": "0004_manual_organic_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792154382669,
+      "tag": "0005_linkedin_facebook_manual_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792155031269,
+      "tag": "0006_post_ad_spend_and_audience",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792156045265,
+      "tag": "0007_ai_performance_comments",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792168661775,
+      "tag": "0008_paid_ad_creatives",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792169787628,
+      "tag": "0009_google_ads_daily",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792170123159,
+      "tag": "0010_youtube_ingest",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792323834234,
+      "tag": "0011_instagram_paid_views",
+      "breakpoints": true
+    }
+  ]
+}

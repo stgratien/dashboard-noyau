@@ -1,0 +1,11 @@
+# Fichiers propres au client : une fusion du noyau ne les écrase jamais (voir docs/noyau.md ; activer le pilote : git config merge.ours.driver true).
+src/client/** merge=ours
+src/assets/** merge=ours
+public/favicon.svg merge=ours
+seeds/** merge=ours
+AGENTS.md merge=ours
+README.md merge=ours
+roadmap.md merge=ours
+scripts/forbidden-words.txt merge=ours
+public/robots.txt merge=ours
+src/integrations/supabase/** merge=ours

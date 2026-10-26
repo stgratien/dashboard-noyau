@@ -1,0 +1,57 @@
+/*
+ * PROPRIÉTÉ DU CLIENT : palette de marque (clair, sombre, exports). Chargé après src/styles.css, il redéfinit les jetons par défaut du noyau.
+ * Valeurs neutres à remplacer par la charte du client.
+ */
+:root {
+  --brand-accent: #E11D48;
+  --background: #F8FAFC;
+  --foreground: #0F172A;
+  --card-foreground: #0F172A;
+  --popover-foreground: #0F172A;
+  --heading: #0F172A;
+  --primary: #2563EB;
+  --primary-foreground: #FFFFFF;
+  --secondary: #EEF2F7;
+  --secondary-foreground: #1E3A8A;
+  --muted: #EEF2F7;
+  --muted-foreground: #475569;
+  --accent: #E0ECFF;
+  --accent-foreground: #1E3A8A;
+  --destructive: #BE123C;
+  --border: #DDE3EC;
+  --input: #DDE3EC;
+  --ring: #2563EB;
+}
+
+:root.dark:not(.export-light) {
+  --background: #0B1220;
+  --foreground: #E5EAF3;
+  --card: #131C2E;
+  --card-foreground: #E5EAF3;
+  --popover: #18233A;
+  --popover-foreground: #E5EAF3;
+  --heading: #FFFFFF;
+  --primary: #60A5FA;
+  --primary-foreground: #0B1220;
+  --secondary: #1B2740;
+  --secondary-foreground: #E5EAF3;
+  --muted: #1B2740;
+  --muted-foreground: #9AA7BF;
+  --accent: #1E3A8A;
+  --accent-foreground: #E5EAF3;
+  --destructive: #FB7185;
+  --border: #2A3858;
+  --input: #2F3E60;
+  --ring: #60A5FA;
+}
+
+/* Sous-arbre d'export : jetons clairs explicites, qui l'emportent sur les valeurs sombres héritées. */
+.export-light {
+  --background: #ffffff; --card: #ffffff; --popover: #ffffff;
+  --foreground: #0F172A; --card-foreground: #0F172A; --popover-foreground: #0F172A;
+  --heading: #0F172A; --primary: #2563EB; --primary-foreground: #ffffff;
+  --secondary: #EEF2F7; --secondary-foreground: #1E3A8A;
+  --muted: #EEF2F7; --muted-foreground: #475569;
+  --accent: #E0ECFF; --accent-foreground: #1E3A8A;
+  --destructive: #BE123C; --border: #DDE3EC; --input: #DDE3EC; --ring: #2563EB;
+}

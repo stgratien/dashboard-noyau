@@ -1,0 +1,90 @@
+# Noyau du tableau de bord et dossier client
+
+Ce code est un **noyau** réutilisable : le même code sert plusieurs clients. Chaque client a son propre projet Lovable (donc sa propre URL, sa propre base et ses propres accès) et son propre dépôt Git. Seul ce qui est propre au client diffère ; une amélioration faite dans le noyau s'applique aux autres dashboards par une fusion Git, sans conflit.
+
+## Ce qui appartient au client (jamais modifié par le noyau)
+
+| Fichier | Contenu |
+| --- | --- |
+| `src/client/config.ts` | Partie publique : identité (titres, logo, signature), début d'historique, éditions ou temps forts, sources Windsor activées, intégrations, réglages du rapport Google. Aucun secret, aucun identifiant de compte. |
+| `src/client/config.server.ts` | Partie serveur : identifiant du compte Windsor de chaque source activée. Importé uniquement par du code serveur. |
+| `src/client/theme.css` | Palette de marque (clair, sombre, exports). Chargée après `src/styles.css`. |
+| `public/favicon.svg`, `public/robots.txt`, `src/assets/` | Images et réglages d'indexation du client. |
+| `seeds/` | Données propres au client (historiques manuels, imports ponctuels), jamais livrées avec le noyau. |
+| `AGENTS.md`, `README.md`, `roadmap.md` | Connaissance et suivi du client. |
+| `src/integrations/supabase/` | Fichiers générés par Lovable pour chaque projet. |
+
+Le reste (`src/lib`, `src/components`, `src/routes`, `src/core`, `drizzle/migrations`, tests génériques, `scripts/`, `docs/`) appartient au noyau. **Dans un projet client, ne modifier que les fichiers du client** : toute autre modification passe par le noyau, sinon la prochaine fusion créera des conflits.
+
+## Règles du noyau
+
+- Une nouvelle clé de configuration est **toujours facultative**, avec sa valeur par défaut dans `src/core/client-config.ts`. `src/test/fixtures/client-v1.ts` est la configuration minimale de la première version : elle doit continuer de passer `defineClient`. Valeurs par défaut à connaître : `features.googleAds` et `features.youtube` valent `true` ; `events.editions` est vide ; pas de signature de pied de page.
+- Le code lit la configuration par `import { client } from "@/lib/client"` (partie publique) et, côté serveur seulement, par `src/lib/windsor-accounts.server.ts`. Aucune constante propre à un client dans le noyau.
+- Les onglets réseaux se déduisent des sources Windsor activées (`PLATFORM_SOURCES`, `SOURCE_PLATFORMS`), sauf si `networks` est fourni. **La source `facebook` est Meta Ads : elle alimente Facebook et Instagram** et impose donc les deux onglets. Google Ads et YouTube se règlent par `features`.
+- Une erreur dans la configuration arrête tout le site à l'import (`defineClient` lève exprès, avec un message clair) : lancer les tests avant de pousser une modification de `src/client/config.ts`.
+- Règles techniques détaillées : `docs/regles-noyau.md`.
+
+## Publier le noyau (dans le dépôt d'origine)
+
+Le noyau vit dans **un dépôt Git à lui** (privé, à pousser sur GitHub pour que les clients le récupèrent), qui n'est jamais le dépôt d'un client. Chaque publication est un commit :
+
+```bash
+# arbre de travail propre, tout est validé
+python3 scripts/export-core.py --publish ../dashboard-noyau --tag v2 --check
+```
+
+Le script retire tout ce qui est propre au client, remplace les fichiers client par des modèles neutres, retire des migrations les instructions qui écrivent des données, et **refuse de rien écrire** s'il reste un mot, une valeur, un identifiant long, une adresse e-mail ou un binaire du client d'origine. Les tests qui contiennent encore des données du client sont écartés et listés.
+
+## Créer le dashboard d'un nouveau client
+
+Dans cet ordre :
+
+1. **Windsor** : autoriser les comptes du client dans le compte Windsor de l'agence, puis relever les identifiants de comptes (connecteur, compte) : ils vont dans `config.server.ts`.
+2. **Projet Lovable** : le créer dans l'espace voulu, activer Lovable Cloud, connecter GitHub (Lovable crée alors le dépôt du client).
+3. **Adopter le noyau** : cloner le dépôt du client, puis `scripts/update-from-noyau.sh <dépôt noyau> main`. Première fois : le script fusionne les historiques sans ancêtre commun, reprend les fichiers du noyau et conserve ceux du client.
+4. **Configurer** `src/client/config.ts`, `config.server.ts`, `theme.css`, `public/favicon.svg`, logo ; valider et pousser (jamais de réécriture d'historique : Lovable).
+5. **Base** (éditeur SQL du projet) : rejouer `drizzle/migrations/0000` à la dernière, dans l'ordre, puis
+
+   ```sql
+   revoke insert, update, delete, truncate, trigger, references on all tables in schema public from anon, authenticated;
+   alter default privileges in schema public revoke insert, update, delete, truncate, trigger, references on tables from anon, authenticated;
+   insert into storage.buckets (id, name, public) values ('publication-thumbnails', 'publication-thumbnails', false) on conflict (id) do nothing;
+   create extension if not exists pg_cron; create extension if not exists pg_net;
+   ```
+
+   (La migration 0001 crée une règle de lecture sur le stockage des vignettes ; la politique d'accès du dashboard est une décision à prendre avant de publier les chiffres d'un client.)
+
+6. **Secrets** du projet : `WINDSOR_API_KEY` ; `LOVABLE_CRON_SECRET` est généré par Lovable ; `GOOGLE_ADS_INGEST_SECRET` et `YOUTUBE_INGEST_SECRET` seulement si ces intégrations sont activées.
+7. **Tâches planifiées** (à créer à la main, jamais dans une migration ; à valider sur le premier projet) :
+
+   ```sql
+   select cron.schedule('windsor-nightly', '17 4,5 * * *', $$ select net.http_post(
+     url := 'https://<url publiée>/api/public/windsor-sync',
+     headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer <LOVABLE_CRON_SECRET>'),
+     body := '{"action":"nightly"}'::jsonb, timeout_milliseconds := 170000) $$);
+   select cron.schedule('windsor-process-queue', '*/3 * * * *', $$ select net.http_post(
+     url := 'https://<url publiée>/api/public/windsor-sync',
+     headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer <LOVABLE_CRON_SECRET>'),
+     body := '{"action":"process"}'::jsonb, timeout_milliseconds := 170000) $$);
+   ```
+
+   La première tâche tourne à 04:17 et 05:17 UTC (la synchronisation ne s'exécute que lorsqu'il est 06 h à Paris, été comme hiver) ; la seconde traite un job d'import toutes les 3 minutes. Ne jamais relire `cron.job.command` (il contient le secret). Pour changer de secret : `LOVABLE_CRON_SECRET_PREVIOUS` permet une rotation sans coupure, puis recréer les tâches.
+8. **Importer l'historique** : `POST /api/public/windsor-sync` avec `{"action":"enqueue"}` et l'en-tête `Authorization: Bearer <LOVABLE_CRON_SECRET>`, puis laisser la file travailler (environ 5 heures par année d'historique pour les 7 sources, à raison d'un job toutes les 3 minutes ; moins avec moins de sources). Les sources Meta organiques (Facebook, Instagram) refusent les périodes de plus de deux ans glissants : régler `data.start` en conséquence ou accepter des jobs en échec.
+9. **Google** (rapport Slides) : ajouter l'URL du projet aux origines JavaScript autorisées de l'identifiant client OAuth et aux référents de la clé du sélecteur ; partager le modèle ; renseigner `report.google` dans `config.ts`. Les marqueurs du modèle sont listés par réseau dans `src/lib/report-tokens.ts` ; un modèle ne doit contenir que ceux des réseaux du client.
+10. **Contrôler** trois nuits de synchronisation avant de livrer.
+
+## Appliquer une amélioration du noyau à un dashboard client
+
+Dans le dépôt du client, arbre propre :
+
+```bash
+scripts/update-from-noyau.sh <dépôt noyau> main    # ou une étiquette : v2
+```
+
+Le script active le pilote de fusion `merge.ours` (les fichiers du client listés dans `.gitattributes` ne sont jamais écrasés), récupère le noyau et le fusionne. Toujours par **commit de fusion** : jamais de squash ni de rebase, ni sur GitHub ni dans Lovable (un squash fait perdre l'ancêtre commun et recrée des conflits). Si le noyau a ajouté une migration SQL, la rejouer dans le projet. Dans le dépôt d'origine lui-même, ne pas activer ce pilote.
+
+## Limites connues
+
+- Une source désactivée par choix (un réseau sans compte payant ou sans compte organique) est encore signalée « partielle » dans les totaux et le rapport : à traiter avec les vrais comptes du premier client concerné.
+- Les tests qui contenaient des données du client d'origine ne sont pas livrés avec le noyau : à réécrire avec des jeux de données neutres.
+- Les textes de définition des indicateurs qui parlent d'« export de l'agence » décrivent une source de données facultative du noyau (historiques manuels) ; ils peuvent être surchargés par `kpiNotes`.
