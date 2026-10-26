@@ -28,7 +28,8 @@ export const eur = (n: number | null, d = 0) => formatEuro(n, d);
 export const budget = (n: number | null) => formatBudget(n);
 
 /** Palette de la marque pour les répartitions (bleu, bleu nuit, accent de la marque, nuances de bleu, gris-bleu). */
-export const BRAND_COLORS = ["var(--primary)", "var(--heading)", "var(--brand-accent)", "#4DA8E0", "#14497F", "var(--muted-foreground)"];
+/** Palette des graphiques : les jetons --brand-second, --brand-sky et --brand-deep sont facultatifs (src/client/theme.css) ; sans eux, les valeurs de repli ci-dessous s'appliquent. */
+export const BRAND_COLORS = ["var(--primary)", "var(--brand-second, var(--heading))", "var(--brand-accent)", "var(--brand-sky, #4DA8E0)", "var(--brand-deep, #14497F)", "var(--muted-foreground)"];
 
 export const pct = formatPercent;
 

@@ -8,7 +8,7 @@ Ce code est un **noyau** réutilisable : le même code sert plusieurs clients. C
 | --- | --- |
 | `src/client/config.ts` | Partie publique : identité (titres, logo, signature), début d'historique, éditions ou temps forts, sources Windsor activées, intégrations, réglages du rapport Google. Aucun secret, aucun identifiant de compte. |
 | `src/client/config.server.ts` | Partie serveur : identifiant du compte Windsor de chaque source activée. Importé uniquement par du code serveur. |
-| `src/client/theme.css` | Palette de marque (clair, sombre, exports). Chargée après `src/styles.css`. |
+| `src/client/theme.css` | Palette de marque (clair, sombre, exports). Chargée après `src/styles.css`. Jetons facultatifs pour les graphiques à plusieurs séries : `--brand-second`, `--brand-sky`, `--brand-deep` (sans eux, des valeurs de repli neutres). |
 | `public/favicon.svg`, `public/robots.txt`, `src/assets/` | Images et réglages d'indexation du client. |
 | `seeds/` | Données propres au client (historiques manuels, imports ponctuels), jamais livrées avec le noyau. |
 | `AGENTS.md`, `README.md`, `roadmap.md` | Connaissance et suivi du client. |
