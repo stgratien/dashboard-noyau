@@ -6,6 +6,7 @@ import { mergeStories, type SocialStory, type StoryPull } from './social-stories
 import { paidOnlyAds } from './top-posts';
 import { applyRuleLinks, groupUnlinkedAds, linkAdsToPosts, parseAdNameDate, LINK_PLATFORMS, type TwinAd } from './ad-post-link';
 import { THUMBNAIL_BUCKET } from './windsor-config';
+import { client } from './client';
 import { mergeFollowerHistory } from './social-followers';
 import { mergeOrganicHistory, type ManualOrganicDay } from './social-organic-history';
 export type PeriodInput = { start: string; end: string };
@@ -51,6 +52,8 @@ const STORY_COLUMNS = 'platform,story_id,published_at,views,reach,replies,shares
  * indisponible » (storiesFailed), journalisée, et le résultat n'est pas gardé en cache. Marge d'un jour de chaque côté : le jour d'une story est celui de Paris, la lecture se fait en UTC.
  */
 async function loadStories(db: SupabaseClient<Database>, ranges: PeriodInput[]) {
+  // Les stories sont propres à Instagram : sans cet onglet, aucune lecture.
+  if (!(client.networks as string[]).includes('instagram')) return { stories: [] as SocialStory[], storyPulls: [] as StoryPull[], storiesFailed: false };
   const optional = db as unknown as SupabaseClient;
   const live: SocialStory[] = [], history: SocialStory[] = [], storyPulls: StoryPull[] = [];
   let storiesFailed = false;
@@ -95,7 +98,14 @@ export async function loadSocialData(data: { period: PeriodInput; comparison: Pe
   const key = JSON.stringify([data.period, data.comparison]);
   const hit = cache.get(key);
   if (!data.fresh && ttl > 0 && hit && Date.now() - hit.at < ttl) return hit.value;
-  const value = await computeSocialData({ period: data.period, comparison: data.comparison });
+  let value: Awaited<ReturnType<typeof computeSocialData>>;
+  try {
+    value = await computeSocialData({ period: data.period, comparison: data.comparison });
+  } catch (error) {
+    // Le navigateur ne voit que « Source indisponible » : le journal serveur garde la cause (jamais l'adresse ni la clé).
+    console.error('social-data: lecture impossible', error instanceof Error ? error.message : error, (error as { cause?: { code?: string } }).cause?.code ?? '');
+    throw error;
+  }
   // Un résultat dont la lecture des stories a échoué n'est pas gardé : la prochaine demande réessaie.
   if (ttl > 0 && !value.storiesFailed) {
     cache.set(key, { at: Date.now(), value });

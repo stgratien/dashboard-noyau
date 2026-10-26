@@ -3,22 +3,22 @@ import { formatNumber, formatEuro, formatPercent, plural, changePercent, typogra
 
 describe('number format', () => {
   it('drops the decimal from 100K upward and keeps one below', () => {
-    expect(formatNumber(162000)).toBe('162K');
-    expect(formatNumber(471499)).toBe('471K');
+    expect(formatNumber(158000)).toBe('158K');
+    expect(formatNumber(473499)).toBe('473K');
     expect(formatNumber(99949)).toBe('99,9K');
     expect(formatNumber(99950)).toBe('100K');
     expect(formatNumber(75100)).toBe('75,1K');
     expect(formatNumber(98234)).toBe('98,2K');
     expect(formatEuro(1400)).toBe('1,4K€');
-    expect(formatEuro(162000)).toBe('162K€');
+    expect(formatEuro(158000)).toBe('158K€');
   });
   it('millions always keep one decimal, even when it is zero', () => {
-    expect(formatNumber(1027325)).toBe('1,0M');
+    expect(formatNumber(1031000)).toBe('1,0M');
     expect(formatNumber(1000000)).toBe('1,0M');
     expect(formatNumber(1100000)).toBe('1,1M');
     expect(formatNumber(2000000)).toBe('2,0M');
     expect(formatNumber(12345678)).toBe('12,3M');
-    expect(formatEuro(1027325, 2)).toBe('1,03M€');
+    expect(formatEuro(1031000, 2)).toBe('1,03M€');
   });
   it('switches to the next unit before rounding up to 1 000', () => {
     expect(formatNumber(999499)).toBe('999K');
@@ -47,7 +47,7 @@ describe('number format', () => {
     expect(formatBudget(1540.4)).toBe('1,5K€');
     expect(formatBudget(2564)).toBe('2,6K€');
     expect(formatBudget(12345.6)).toBe('12,3K€');
-    expect(formatBudget(162000)).toBe('162K€');
+    expect(formatBudget(158000)).toBe('158K€');
     expect(formatBudget(0)).toBe('0€');
     expect(formatBudget(-0.2)).toBe('0€');
     expect(formatBudget(null)).toBe('Donnée non disponible');

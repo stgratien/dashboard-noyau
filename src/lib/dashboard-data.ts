@@ -5,8 +5,8 @@ import type { PlatformId } from "@/core/client-config";
 // Vignettes de démonstration neutres (aucun actif propre à un client).
 const placeholder = (width: number, height: number) =>
   `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#d9e2ec"/></svg>`)}`;
-const aircraftThumbnail = placeholder(320, 320);
-const exhibitionThumbnail = placeholder(180, 320);
+const squareThumbnail = placeholder(320, 320);
+const verticalThumbnail = placeholder(180, 320);
 
 // Réseaux : Windsor.ai — Meta Ads, Facebook organique, Instagram, TikTok Ads,
 // TikTok organique, LinkedIn Ads, LinkedIn organique (7 sources). Aucune connexion active.
@@ -116,7 +116,7 @@ export function getPosts(p: PlatformId, period: Period = lastDays(30, "2026-10-0
     const vertical = p === "tiktok" || format === "Reel" || format === "Story";
     return {
       id: i, title, format, vertical, impressions,
-      thumbnail_url: vertical ? exhibitionThumbnail : aircraftThumbnail,
+      thumbnail_url: vertical ? verticalThumbnail : squareThumbnail,
       permalink: `/publications/${p}/${i}`,
       date: new Date(`${isoFromDay(dayNumber(period.end) - Math.floor(i * (days - 1) / 7))}T12:00:00Z`).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", timeZone: "UTC" }),
       reach, likes: Math.round(eng * 0.75), comments: Math.round(eng * 0.08),

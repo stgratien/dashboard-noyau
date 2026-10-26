@@ -43,12 +43,12 @@ Dans cet ordre :
 2. **Projet Lovable** : le créer dans l'espace voulu, activer Lovable Cloud, connecter GitHub (Lovable crée alors le dépôt du client).
 3. **Adopter le noyau** : cloner le dépôt du client, puis `scripts/update-from-noyau.sh <dépôt noyau> main`. Première fois : le script fusionne les historiques sans ancêtre commun, reprend les fichiers du noyau et conserve ceux du client.
 4. **Configurer** `src/client/config.ts`, `config.server.ts`, `theme.css`, `public/favicon.svg`, logo ; valider et pousser (jamais de réécriture d'historique : Lovable).
-5. **Base** (éditeur SQL du projet) : rejouer `drizzle/migrations/0000` à la dernière, dans l'ordre, puis
+5. **Base** (éditeur SQL du projet) : rejouer `drizzle/migrations/0000` à la dernière, dans l'ordre et dans une transaction (`begin; … commit;`, pour qu'une erreur n'en laisse pas la moitié), puis
 
    ```sql
    revoke insert, update, delete, truncate, trigger, references on all tables in schema public from anon, authenticated;
    alter default privileges in schema public revoke insert, update, delete, truncate, trigger, references on tables from anon, authenticated;
-   insert into storage.buckets (id, name, public) values ('publication-thumbnails', 'publication-thumbnails', false) on conflict (id) do nothing;
+   insert into storage.buckets (id, name, public) values ('publication-thumbnails', 'publication-thumbnails', false) on conflict (id) do update set public = false;
    create extension if not exists pg_cron; create extension if not exists pg_net;
    ```
 
@@ -58,7 +58,7 @@ Dans cet ordre :
 7. **Tâches planifiées** (à créer à la main, jamais dans une migration ; à valider sur le premier projet) :
 
    ```sql
-   select cron.schedule('windsor-nightly', '17 4,5 * * *', $$ select net.http_post(
+   select cron.schedule('windsor-nightly-paris', '17 4,5 * * *', $$ select net.http_post(
      url := 'https://<url publiée>/api/public/windsor-sync',
      headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer <LOVABLE_CRON_SECRET>'),
      body := '{"action":"nightly"}'::jsonb, timeout_milliseconds := 170000) $$);
@@ -69,7 +69,7 @@ Dans cet ordre :
    ```
 
    La première tâche tourne à 04:17 et 05:17 UTC (la synchronisation ne s'exécute que lorsqu'il est 06 h à Paris, été comme hiver) ; la seconde traite un job d'import toutes les 3 minutes. Ne jamais relire `cron.job.command` (il contient le secret). Pour changer de secret : `LOVABLE_CRON_SECRET_PREVIOUS` permet une rotation sans coupure, puis recréer les tâches.
-8. **Importer l'historique** : `POST /api/public/windsor-sync` avec `{"action":"enqueue"}` et l'en-tête `Authorization: Bearer <LOVABLE_CRON_SECRET>`, puis laisser la file travailler (environ 5 heures par année d'historique pour les 7 sources, à raison d'un job toutes les 3 minutes ; moins avec moins de sources). Les sources Meta organiques (Facebook, Instagram) refusent les périodes de plus de deux ans glissants : régler `data.start` en conséquence ou accepter des jobs en échec.
+8. **Importer l'historique** : `POST /api/public/windsor-sync` avec `{"action":"enqueue"}` et l'en-tête `Authorization: Bearer <LOVABLE_CRON_SECRET>`, puis laisser la file travailler (environ 5 heures par année d'historique pour les 7 sources, à raison d'un job toutes les 3 minutes ; moins avec moins de sources). Les sources Meta organiques (Facebook, Instagram) refusent les périodes de plus de deux ans glissants : régler `data.start` en conséquence ou accepter des jobs en échec. Un job en échec n'est jamais rejoué : après avoir corrigé la cause, `update public.social_import_jobs set state='pending', attempts=0, started_at=null, finished_at=null, error_message=null where state='failed';` le remet en file (voir d'abord `select state, count(*) from public.social_import_jobs group by 1;`).
 9. **Google** (rapport Slides) : ajouter l'URL du projet aux origines JavaScript autorisées de l'identifiant client OAuth et aux référents de la clé du sélecteur ; partager le modèle ; renseigner `report.google` dans `config.ts`. Les marqueurs du modèle sont listés par réseau dans `src/lib/report-tokens.ts` ; un modèle ne doit contenir que ceux des réseaux du client.
 10. **Contrôler** trois nuits de synchronisation avant de livrer.
 

@@ -51,6 +51,8 @@ export interface ClientInput {
     shortName?: string;
     pageTitle: string;
     pageDescription: string;
+    /** Titre affiché en tête de page (défaut « Dashboard de performances social media et web »). */
+    headline?: string;
     logo: { url: string };
     /** Signature du pied de page (« Fait avec ♥️ par Mon agence ») ; absente ou null = pas de signature. */
     footerCredit?: string | null;
@@ -83,7 +85,7 @@ export interface ClientInput {
     fileNamePrefix?: string;
     /** Clé de stockage du navigateur pour le modèle choisi (défaut « <id>-report-template-id »). */
     templateStorageKey?: string;
-    /** Sources que le tableau de bord n'a pas et que l'équipe complète à la main dans le modèle (« X », « Visibrain »...). */
+    /** Sources que le tableau de bord n'a pas et que l'équipe complète à la main dans le modèle (« X », « un outil de veille »...). */
     manualSources?: string[];
   };
   /** Textes de définition propres à l'historique du client (documentation) ; sinon le texte générique du noyau. */
@@ -105,6 +107,7 @@ export interface Client {
     shortName: string;
     pageTitle: string;
     pageDescription: string;
+    headline: string;
     logo: { url: string };
     footerCredit: string | null;
     exportFileBase: string;
@@ -163,6 +166,7 @@ export function defineClient(input: ClientInput): Client {
       shortName: b.shortName ?? b.name,
       pageTitle: b.pageTitle,
       pageDescription: b.pageDescription,
+      headline: b.headline ?? "Dashboard de performances social media et web",
       logo: b.logo,
       footerCredit: b.footerCredit ?? null,
       exportFileBase: b.exportFileBase ?? `Dashboard-${b.name.trim().replace(/\s+/g, "-")}`,

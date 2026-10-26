@@ -16,6 +16,7 @@ describe("client configuration", () => {
     expect(c.events).toEqual({ editions: [], groupLabel: "Éditions" });
     expect(c.report.google).toBeNull();
     expect(c.brand.footerCredit).toBeNull();
+    expect(c.brand.headline).toBe("Dashboard de performances social media et web");
   });
 
   it("derives the network tabs from the enabled sources, Meta Ads feeding Facebook and Instagram", () => {

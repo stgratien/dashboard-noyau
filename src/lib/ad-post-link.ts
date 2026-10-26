@@ -5,8 +5,8 @@ import type { PaidAd } from './top-posts';
 /**
  * Rapprochement automatique d'une annonce Meta avec la publication organique dont elle est issue.
  * Windsor donne, pour Instagram, l'identifiant de la copie publicitaire du média et jamais celui de la publication :
- * aucun lien natif n'existe. Les annonces suivent pourtant une convention de nommage « JJMMAAAA_titre_IG|FB ».
- * Règle (mesurée : 94,9 % de précision sur 136 propositions, 100 % sur Instagram avec le garde-fou jumelle) :
+ * aucun lien natif n'existe. Les annonces suivent souvent une convention de nommage « JJMMAAAA_titre_IG|FB ».
+ * Règle (avec un garde-fou contre les publications jumelles) :
  *  1. la date au début du nom d'annonce, une seule publication ce jour-là (jour de Paris) sur le réseau visé ;
  *  2. sinon, plusieurs publications ce jour-là : départage par le texte, ou abstention ;
  *  3. sans date : texte seul (au moins deux racines de mots), avec un seuil plus strict. La fenêtre part du premier jour de diffusion
@@ -26,7 +26,7 @@ export const LINK_PLATFORMS = ['instagram', 'facebook'];
 export const MIN_SCORE_SAME_DAY = 0.5;
 /** Score de texte minimal, sans date dans le nom : plus strict, car rien d'autre ne confirme le lien. */
 export const MIN_SCORE_TEXT_ONLY = 0.75;
-/** Sans date, au moins deux racines de mots : un seul mot (« exposants ») ne suffit pas à désigner une publication. */
+/** Sans date, au moins deux racines de mots : un seul mot courant ne suffit pas à désigner une publication. */
 export const MIN_STEMS_TEXT_ONLY = 2;
 const LOOKBACK_DAYS = 45;
 

@@ -293,7 +293,7 @@ function Dashboard() {
                   <img src={client.brand.logo.url} alt="" className="h-9 w-auto object-contain" />
                 </button>
                 <div className="min-w-0">
-                  <h1 className="text-base font-medium leading-tight">Dashboard de performances social media et web</h1>
+                  <h1 className="text-base font-medium leading-tight">{client.brand.headline}</h1>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {lastSync
                       ? `Données mises à jour le ${new Date(lastSync).toLocaleString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(" ", " à ")}`

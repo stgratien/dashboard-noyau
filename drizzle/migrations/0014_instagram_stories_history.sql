@@ -1,4 +1,4 @@
--- Historique des stories Instagram importé des exports Meta (seeds/instagram-stories-history-2026-10-20.sql), séparé de ce que la synchronisation Windsor
+-- Historique des stories Instagram importé des exports Meta (seed SQL du client, voir seeds/), séparé de ce que la synchronisation Windsor
 -- écrit dans social_stories : la synchronisation ne peut ni l'effacer ni l'écraser, et le tableau de bord fusionne les deux à la lecture (plus grand chiffre connu).
 -- Idempotent : relançable sans erreur (peut aussi être collé dans l'éditeur SQL de Lovable Cloud). Tables optionnelles : sans elles, seul le relevé en direct existe.
 

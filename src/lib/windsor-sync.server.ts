@@ -236,7 +236,8 @@ export async function syncLinkedInFollowers(key: string) {
     const next = byDay.get(isoFromDay(d+1))?.['newFollowers'];
     followers = followers == null || next == null ? null : followers-next;
     const day=isoFromDay(d), metrics=byDay.get(day);
-    if (metrics) values.push({platform:'linkedin',source:'linkedin_organic',day,metrics:{...metrics,followers} as Json,followers_estimated:followers != null,synced_at:now});
+    // Une valeur inconnue (null) n'est jamais écrite : elle effacerait l'instantané relevé la nuit où il était connu.
+    if (metrics && followers != null) values.push({platform:'linkedin',source:'linkedin_organic',day,metrics:{...metrics,followers} as Json,followers_estimated:true,synced_at:now});
   }
   for (let i=0;i<values.length;i+=200) {
     const r=await db.from('social_daily').upsert(values.slice(i,i+200));
