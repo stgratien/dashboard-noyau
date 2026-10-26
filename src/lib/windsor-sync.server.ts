@@ -60,6 +60,16 @@ async function storeThumbnail(source: WindsorSource, path: string, remote: strin
   } catch (error) { return { reason: `${url.hostname} : ${failureText(error)}` }; }
 }
 
+/** Résume les vignettes absentes d'un passage : les trois raisons les plus fréquentes avec leur nombre (la forme d'une entrée est « identifiant : raison »). */
+const summarizeGaps = (gaps: string[]) => {
+  const counts = new Map<string, number>();
+  for (const gap of gaps) {
+    const reason = gap.slice(gap.indexOf(" : ") + 3);
+    counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  }
+  return [...counts].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([reason, n]) => `${n} × ${reason}`).join(" ; ");
+};
+
 /** Cause d'un échec sans jamais citer d'adresse (elle porte une signature) : nom de l'erreur et début du message, toute URL remplacée. */
 const failureText = (error: unknown) => (error instanceof Error ? `${error.name} ${error.message.replace(/https?:\/\/\S+/g, "<url>").slice(0, 100)}`.trim() : "erreur inconnue");
 
@@ -209,8 +219,9 @@ export async function syncSource(source: WindsorSource, period: Period, key: str
       const creatives = await syncAdCreatives(source, period, key);
       if (!creatives.success) throw new Error(creatives.message ?? "Synchronisation des publicités impossible");
     } else if (period.end >= lastDays(7, today).start) audience = await syncAudience(source, key);
-    // La source reste « ok » : seule l'audience a échoué ; le détail est gardé dans le message (lisible en base).
-    await db.from("social_sync_status").upsert({ source, last_attempt_at: now, last_success_at: now, state: "ok", message: audience?.failed.length ? `Audience non mise à jour : ${audience.failed.join(", ")}` : null });
+    // La source reste « ok » : seule l'audience ou des vignettes ont échoué ; le détail est gardé dans le message (lisible en base, jamais affiché).
+    const notes = [audience?.failed.length ? `Audience non mise à jour : ${audience.failed.join(", ")}` : null, thumbnailGaps.length ? `Vignettes absentes : ${summarizeGaps(thumbnailGaps)}` : null].filter(Boolean);
+    await db.from("social_sync_status").upsert({ source, last_attempt_at: now, last_success_at: now, state: "ok", message: notes.length ? notes.join(" · ").slice(0, 600) : null });
     return { source, days: values.length, success: true, ...(thumbnailGaps.length ? { thumbnailGapCount: thumbnailGaps.length, thumbnailGaps: thumbnailGaps.slice(0, 12) } : {}) };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Synchronisation interrompue";
