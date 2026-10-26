@@ -49,7 +49,7 @@ async function storeThumbnail(source: WindsorSource, path: string, remote: strin
   const allowed = ["fbcdn.net", "cdninstagram.com", "tiktokcdn.com", "tiktokcdn-us.com", "tiktokcdn-eu.com", "byteoversea.com", "licdn.com", "tiktok.com", "ibytedtos.com"];
   if (url.protocol !== "https:" || !allowed.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`))) return { reason: `hôte non autorisé (${url.hostname})` };
   let result: Response;
-  try { result = await fetch(url, { signal: AbortSignal.timeout(12000), redirect: "error" }); } catch (error) { return { reason: `${url.hostname} : ${failureText(error)}` }; }
+  try { result = await fetch(url, { signal: AbortSignal.timeout(12000), redirect: "manual" }); } catch (error) { return { reason: `${url.hostname} : ${failureText(error)}` }; }
   const type = result.headers.get("content-type") ?? "";
   if (!result.ok || !type.startsWith("image/")) return { reason: `${url.hostname} HTTP ${result.status} ${type || "sans type"}` };
   try {
@@ -552,7 +552,7 @@ async function storeImage(path: string, remote: string) {
   const allowed = ["fbcdn.net", "cdninstagram.com", "tiktokcdn.com", "tiktokcdn-us.com", "tiktokcdn-eu.com", "byteoversea.com", "licdn.com", "tiktok.com", "ibytedtos.com"];
   if (url.protocol !== "https:" || !allowed.some((h) => url.hostname === h || url.hostname.endsWith(`.${h}`))) return null;
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(12000), redirect: "error" });
+    const r = await fetch(url, { signal: AbortSignal.timeout(12000), redirect: "manual" });
     const type = r.headers.get("content-type") ?? "";
     if (!r.ok || !type.startsWith("image/")) return null;
     const data = await r.arrayBuffer();

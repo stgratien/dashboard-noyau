@@ -28,7 +28,7 @@ async function storeThumbnail(videoId: string, remote: string | null | undefined
   let url: URL; try { url = new URL(remote); } catch { return null; }
   if (url.protocol !== 'https:' || !['ytimg.com', 'ggpht.com', 'googleusercontent.com'].some(h => url.hostname === h || url.hostname.endsWith(`.${h}`))) return null;
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(10000), redirect: 'error' });
+    const r = await fetch(url, { signal: AbortSignal.timeout(10000), redirect: 'manual' });
     const type = r.headers.get('content-type') ?? '';
     if (!r.ok || !type.startsWith('image/')) return null;
     const data = await r.arrayBuffer();
