@@ -583,7 +583,7 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
                     <td className="pr-3 text-right">{nf.format(x.likes)}</td>
                     <td className="pr-3 text-right">{nf.format(x.comments)}</td>
                     <td className="pr-3 text-right">{nf.format(x.shares)}</td>
-                    <td className="pr-3 text-right font-medium">{pct(x.rate)}</td>
+                    <td className="pr-3 text-right font-medium">{x.rate == null ? "—" : pct(x.rate)}</td>
                     <td className="pr-3 text-right">{x.spend == null ? "" : budget(x.spend)}</td>
                     <td className="text-right">{x.cpe == null ? "" : eur(x.cpe, 2)}</td>
                   </tr>
@@ -688,9 +688,10 @@ export function TypeBadge({ type }: { type: PostType }) {
 /** Chiffres d'une carte Top post : celui qui classe la carte passe en tête (volume d'interactions pour l'engagement, CPM pour le CPM), les autres gardent leur ordre. */
 function topPostFigures(post: PostStats, kind: "visibility" | "engagement" | "cpm") {
   const figures = [
-    { key: "impressions", label: "Impressions / vues", value: fmt(post.impressions) },
+    // Impressions inconnues (statistiques que le réseau ne fournit plus) : un tiret, comme dans le tableau, jamais « Donnée non disponible » en double.
+    { key: "impressions", label: "Impressions / vues", value: post.impressions == null ? "—" : fmt(post.impressions) },
     { key: "interactions", label: "Interactions", value: fmt(post.interactions) },
-    { key: "rate", label: "Taux d’eng.", value: pct(post.rate) },
+    { key: "rate", label: "Taux d’eng.", value: post.rate == null ? "—" : pct(post.rate) },
     { key: "spend", label: "Budget média", value: post.spend == null ? "—" : budget(post.spend) },
     { key: "cpm", label: "CPM", value: post.cpm == null ? "—" : eur(post.cpm, 2) },
   ];
@@ -779,7 +780,7 @@ export function TopPostCards({ best, p, hasPosts }: { best: ReturnType<typeof to
           post={best.visibility}
           kind="visibility"
           reportKey="topPost-visibility"
-          {...none}
+          {...(hasPosts ? { emptyNote: "Impressions non fournies par le réseau pour les publications de la période" } : none)}
         />
         <TopPostCard
           title="Engagement"

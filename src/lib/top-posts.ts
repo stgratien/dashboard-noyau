@@ -28,8 +28,13 @@ export const cleanPostText = (platform: string, text: string) =>
 /** Per-post figures; budget/CPM come only from ads linked to the post, never from account totals. */
 export function postStats(x: SocialPost) {
   const n = (k: string) => x.metrics[k] ?? null;
-  const impressions = n('impressions'), likes = n('likes'), comments = n('comments'), shares = n('shares');
+  const likes = n('likes'), comments = n('comments'), shares = n('shares');
   const interactions = likes == null || comments == null || shares == null ? null : likes + comments + shares;
+  // Des interactions supérieures aux impressions sont impossibles : le réseau ne fournit plus les statistiques de cette publication (LinkedIn ne les garde qu'environ 14 mois).
+  // Les impressions sont alors inconnues (« — », hors classements) : jamais un taux d'engagement de 182 %. Même une partie connue des interactions suffit (minorant).
+  const reported = n('impressions');
+  const knownInteractions = (likes ?? 0) + (comments ?? 0) + (shares ?? 0);
+  const impressions = reported != null && knownInteractions > reported ? null : reported;
   const spend = x.sponsored && x.sponsored.spend > 0 ? x.sponsored.spend : null;
   const cpm = spend != null && x.sponsored && x.sponsored.impressions > 0 ? spend / x.sponsored.impressions * 1000 : null;
   // CPE : budget de ses annonces ÷ interactions totales de la publication (j'aime + commentaires + partages, organique et payant confondus, comme les colonnes du tableau).
@@ -88,13 +93,15 @@ export type SortKey = 'type' | 'format' | 'ts' | 'impressions' | 'likes' | 'comm
 export function sortRows(rows: PostStats[], key: SortKey, dir: 'asc' | 'desc'): PostStats[] {
   const sign = dir === 'asc' ? 1 : -1;
   const value = (r: PostStats): number | string | null => key === 'type' ? r.type : key === 'format' ? r.format : r[key];
+  // Égalités (et lignes sans valeur) : impressions, puis interactions, puis la plus récente, pour que l'ordre ne dépende jamais de celui de la base.
+  const tie = (a: PostStats, b: PostStats) => (b.impressions ?? -1) - (a.impressions ?? -1) || (b.interactions ?? -1) - (a.interactions ?? -1) || b.ts - a.ts;
   return [...rows].sort((a, b) => {
     const x = value(a), y = value(b);
-    if (x == null && y == null) return (b.impressions ?? -1) - (a.impressions ?? -1);
+    if (x == null && y == null) return tie(a, b);
     if (x == null) return 1;
     if (y == null) return -1;
     const c = typeof x === 'string' || typeof y === 'string' ? String(x).localeCompare(String(y), 'fr') : x - y;
-    return c !== 0 ? c * sign : (b.impressions ?? -1) - (a.impressions ?? -1);
+    return c !== 0 ? c * sign : tie(a, b);
   });
 }
 

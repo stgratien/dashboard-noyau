@@ -24,6 +24,42 @@ describe('top posts', () => {
   });
 });
 
+describe('impressions the network no longer provides', () => {
+  it('treats interactions above impressions as unknown impressions, never as a rate above 100 %', () => {
+    const old = postStats(post('old', { impressions: 7, likes: 200, comments: 4, shares: 15 }));
+    expect(old.interactions).toBe(219);
+    expect(old.impressions).toBeNull();
+    expect(old.rate).toBeNull();
+    const fine = postStats(post('fine', { impressions: 300, likes: 200, comments: 4, shares: 15 }));
+    expect(fine.impressions).toBe(300);
+    expect(fine.rate).toBeCloseTo(73);
+    // Equal figures are possible; unknown interactions leave the impressions as they are.
+    expect(postStats(post('eq', { impressions: 219, likes: 200, comments: 4, shares: 15 })).impressions).toBe(219);
+    expect(postStats(post('nolikes', { impressions: 5, comments: 4 })).impressions).toBe(5);
+    // The known part of the interactions is a lower bound: 204 known interactions already exceed 7 impressions, whatever the missing share count.
+    const partial = postStats(post('partial', { impressions: 7, likes: 200, comments: 4 }));
+    expect(partial.interactions).toBeNull();
+    expect(partial.impressions).toBeNull();
+  });
+  it('orders posts without a sort value by interactions, never by the order of the database', () => {
+    const rows = [
+      post('b', { impressions: 5, likes: 100, comments: 1, shares: 1 }),
+      post('a', { impressions: 7, likes: 200, comments: 4, shares: 15 }),
+      post('fine', { impressions: 3000, likes: 30, comments: 2, shares: 1 }),
+    ].map(postStats);
+    expect(sortRows(rows, 'impressions', 'desc').map(r => r.id)).toEqual(['fine', 'a', 'b']);
+    expect(sortRows(rows, 'impressions', 'asc').map(r => r.id)).toEqual(['fine', 'a', 'b']);
+    expect(sortRows(rows, 'rate', 'desc').map(r => r.id)).toEqual(['fine', 'a', 'b']);
+  });
+  it('keeps such a post out of the visibility ranking and sorts it last on impressions', () => {
+    const rows = [post('old', { impressions: 7, likes: 200, comments: 4, shares: 15 }), post('fine', { impressions: 3000, likes: 30, comments: 2, shares: 1 })].map(postStats);
+    expect(topPosts(rows).visibility?.id).toBe('fine');
+    expect(sortRows(rows, 'impressions', 'desc').map(r => r.id)).toEqual(['fine', 'old']);
+    expect(sortRows(rows, 'impressions', 'asc').map(r => r.id)).toEqual(['fine', 'old']);
+    expect(definition('topPosts', 'linkedin')).toContain('ses impressions sont inconnues');
+  });
+});
+
 describe('CPE of the publications table', () => {
   const metrics = { impressions: 1000, likes: 500, comments: 50, shares: 50 };
   it('divides the budget of the ads by the total interactions of the publication', () => {
