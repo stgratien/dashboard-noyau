@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { postStats, topPosts, sortRows, audienceBreakdowns, audiencePanels, countryName, formatLabel, flopPosts, formatOptions, postFormat, pageWindow, FLOP_COUNT, TABLE_PAGE_SIZE } from '@/lib/top-posts';
+import { postStats, unusableStatMonths, topPosts, sortRows, audienceBreakdowns, audiencePanels, countryName, formatLabel, flopPosts, formatOptions, postFormat, pageWindow, FLOP_COUNT, TABLE_PAGE_SIZE } from '@/lib/top-posts';
 import { pdfFileName } from '@/lib/pdf-export';
 import { definition } from '@/lib/kpi-definitions';
 
@@ -10,7 +10,7 @@ const post = (id: string, m: Record<string, number>, sponsored?: { spend: number
 
 describe('top posts', () => {
   it('picks visibility, engagement and lowest sponsored CPM; organic posts have no budget', () => {
-    const rows = [post('a', { impressions: 1000, likes: 10, comments: 0, shares: 0 }), post('b', { impressions: 500, likes: 90, comments: 5, shares: 5 }, { spend: 10, impressions: 4000 }), post('c', { impressions: 200, likes: 1, comments: 0, shares: 0 }, { spend: 10, impressions: 1000 })].map(postStats);
+    const rows = [post('a', { impressions: 1000, likes: 10, comments: 0, shares: 0 }), post('b', { impressions: 500, likes: 90, comments: 5, shares: 5 }, { spend: 10, impressions: 4000 }), post('c', { impressions: 200, likes: 1, comments: 0, shares: 0 }, { spend: 10, impressions: 1000 })].map(x => postStats(x));
     const best = topPosts(rows);
     expect(best.visibility?.id).toBe('a');
     expect(best.engagement?.id).toBe('b');
@@ -46,17 +46,56 @@ describe('impressions the network no longer provides', () => {
       post('b', { impressions: 5, likes: 100, comments: 1, shares: 1 }),
       post('a', { impressions: 7, likes: 200, comments: 4, shares: 15 }),
       post('fine', { impressions: 3000, likes: 30, comments: 2, shares: 1 }),
-    ].map(postStats);
+    ].map(x => postStats(x));
     expect(sortRows(rows, 'impressions', 'desc').map(r => r.id)).toEqual(['fine', 'a', 'b']);
     expect(sortRows(rows, 'impressions', 'asc').map(r => r.id)).toEqual(['fine', 'a', 'b']);
     expect(sortRows(rows, 'rate', 'desc').map(r => r.id)).toEqual(['fine', 'a', 'b']);
   });
   it('keeps such a post out of the visibility ranking and sorts it last on impressions', () => {
-    const rows = [post('old', { impressions: 7, likes: 200, comments: 4, shares: 15 }), post('fine', { impressions: 3000, likes: 30, comments: 2, shares: 1 })].map(postStats);
+    const rows = [post('old', { impressions: 7, likes: 200, comments: 4, shares: 15 }), post('fine', { impressions: 3000, likes: 30, comments: 2, shares: 1 })].map(x => postStats(x));
     expect(topPosts(rows).visibility?.id).toBe('fine');
     expect(sortRows(rows, 'impressions', 'desc').map(r => r.id)).toEqual(['fine', 'old']);
     expect(sortRows(rows, 'impressions', 'asc').map(r => r.id)).toEqual(['fine', 'old']);
     expect(definition('topPosts', 'linkedin')).toContain('ses impressions sont inconnues');
+    expect(definition('topPosts', 'linkedin')).toContain('toutes celles de ce mois le sont');
+  });
+});
+
+describe('months whose statistics the network no longer provides', () => {
+  // Fixed date: the rule only looks at months that ended at least a year ago.
+  const TODAY = '2026-10-27';
+  const li = (id: string, iso: string, m: Record<string, number>) => ({ ...post(id, m), platform: 'linkedin', published_at: iso });
+  const april = [
+    li('a', '2024-04-08T10:00:00Z', { impressions: 7, likes: 200, comments: 4, shares: 15 }),
+    li('b', '2024-04-09T10:00:00Z', { impressions: 5, likes: 100, comments: 1, shares: 1 }),
+    // Plausible on its own (rate 76 %), yet its month lost its statistics: only the month rule can tell.
+    li('c', '2024-04-10T10:00:00Z', { impressions: 37, likes: 20, comments: 5, shares: 3 }),
+  ];
+  it('flags the month of a network when at least two posts and a quarter of them have impossible impressions', () => {
+    expect(unusableStatMonths(april, TODAY)).toEqual(['linkedin:2024-04']);
+    const healthy = Array.from({ length: 8 }, (_, i) => li(`h${i}`, '2024-05-10T10:00:00Z', { impressions: 2000, likes: 20, comments: 2, shares: 1 }));
+    const bad = (n: number) => Array.from({ length: n }, (_, i) => li(`x${i}`, '2024-05-12T10:00:00Z', { impressions: 3, likes: 50, comments: 0, shares: 0 }));
+    // The quarter is inclusive: 2 of 8 (25 %) flags the month, 2 of 10 (20 %) does not, 3 of 11 (27 %) does; a single bad post never flags a month.
+    const eight = [...Array.from({ length: 6 }, (_, i) => li(`e${i}`, '2024-05-10T10:00:00Z', { impressions: 2000, likes: 20, comments: 2, shares: 1 })), ...bad(2)];
+    expect(unusableStatMonths(eight, TODAY)).toEqual(['linkedin:2024-05']);
+    expect(unusableStatMonths([...healthy, ...bad(2)], TODAY)).toEqual([]);
+    expect(unusableStatMonths([...healthy, ...bad(3)], TODAY)).toEqual(['linkedin:2024-05']);
+    expect(unusableStatMonths([...healthy, ...bad(1)], TODAY)).toEqual([]);
+    // Months are counted per network and on the Paris day: 22:30 UTC on 30 April is 1 May in Paris, so the two bad posts share May (in UTC, each month would hold one bad post and none would be flagged).
+    expect(unusableStatMonths([{ ...april[0]!, published_at: '2024-04-30T22:30:00Z' }, { ...april[1]!, published_at: '2024-05-02T10:00:00Z' }, { ...april[1]!, platform: 'tiktok', post_id: 't' }], TODAY)).toEqual(['linkedin:2024-05']);
+  });
+  it('gives the unknown impressions of a flagged month to every post of that month, and only to it', () => {
+    const gaps = new Set(unusableStatMonths(april, TODAY));
+    expect(postStats(april[2]!).impressions).toBe(37);
+    const flagged = postStats(april[2]!, gaps);
+    expect(flagged.impressions).toBeNull();
+    expect(flagged.rate).toBeNull();
+    expect(flagged.interactions).toBe(28);
+    // A month that ended less than a year ago is never set aside, whatever its posts look like (their figures may simply not have arrived yet).
+    expect(unusableStatMonths(april, '2025-04-29')).toEqual([]);
+    expect(unusableStatMonths(april, '2025-05-01')).toEqual(['linkedin:2024-04']);
+    expect(postStats(li('d', '2024-05-02T10:00:00Z', { impressions: 37, likes: 20, comments: 5, shares: 3 }), gaps).impressions).toBe(37);
+    expect(postStats({ ...april[2]!, platform: 'facebook' }, gaps).impressions).toBe(37);
   });
 });
 
@@ -84,7 +123,7 @@ describe('CPE of the publications table', () => {
       post('a', metrics),
       post('b', metrics, { spend: 100, impressions: 1000 }),
       post('c', { impressions: 1000, likes: 15, comments: 3, shares: 2 }, { spend: 100, impressions: 1000 }),
-    ].map(postStats);
+    ].map(x => postStats(x));
     expect(sortRows(rows, 'cpe', 'asc').map(r => r.id)).toEqual(['b', 'c', 'a']);
     expect(sortRows(rows, 'cpe', 'desc').map(r => r.id)).toEqual(['c', 'b', 'a']);
   });
@@ -162,8 +201,8 @@ describe('publication types', () => {
     expect(paidAdStats(other!).permalink).toBe('');
   });
   it('ranks visibility and engagement on the period posts only, but lets older promoted posts win the CPM', () => {
-    const inPeriod = [post('new', { impressions: 20000, likes: 100, comments: 0, shares: 0 }, { spend: 40, impressions: 4000 })].map(postStats);
-    const older = [post('old', { impressions: 120000, likes: 900, comments: 50, shares: 50 }, { spend: 200, impressions: 100000 })].map(postStats);
+    const inPeriod = [post('new', { impressions: 20000, likes: 100, comments: 0, shares: 0 }, { spend: 40, impressions: 4000 })].map(x => postStats(x));
+    const older = [post('old', { impressions: 120000, likes: 900, comments: 50, shares: 50 }, { spend: 200, impressions: 100000 })].map(x => postStats(x));
     const best = topPosts(inPeriod, older);
     expect(best.visibility?.id).toBe('new');
     expect(best.engagement?.id).toBe('new');
@@ -171,13 +210,13 @@ describe('publication types', () => {
     expect(topPosts(inPeriod).cpm?.id).toBe('new');
   });
   it('falls back to the older promoted posts when no post of the period can be ranked', () => {
-    const older = [post('old', { impressions: 120000, likes: 900, comments: 50, shares: 50 }, { spend: 200, impressions: 100000 })].map(postStats);
+    const older = [post('old', { impressions: 120000, likes: 900, comments: 50, shares: 50 }, { spend: 200, impressions: 100000 })].map(x => postStats(x));
     const best = topPosts([], older);
     expect(best.visibility?.id).toBe('old');
     expect(best.engagement?.id).toBe('old');
     expect(topPosts([], []).visibility).toBeNull();
     // A post of the period that can be ranked always wins over the older ones.
-    const inPeriod = [post('new', { impressions: 10, likes: 1, comments: 0, shares: 0 })].map(postStats);
+    const inPeriod = [post('new', { impressions: 10, likes: 1, comments: 0, shares: 0 })].map(x => postStats(x));
     expect(topPosts(inPeriod, older).visibility?.id).toBe('new');
   });
   it('names the carousel format per network, never both names side by side', () => {
@@ -200,7 +239,7 @@ describe('publication types', () => {
       post('a', { impressions: 100, likes: 5, comments: 1, shares: 0 }),
       post('b', { impressions: 300, likes: 1, comments: 0, shares: 0 }, { spend: 30, impressions: 3000 }),
       post('c', { impressions: 200, likes: 9, comments: 4, shares: 2 }),
-    ].map(postStats);
+    ].map(x => postStats(x));
     expect(sortRows(rows, 'impressions', 'desc').map(r => r.id)).toEqual(['b', 'c', 'a']);
     expect(sortRows(rows, 'impressions', 'asc').map(r => r.id)).toEqual(['a', 'c', 'b']);
     expect(sortRows(rows, 'likes', 'desc').map(r => r.id)).toEqual(['c', 'a', 'b']);
@@ -218,7 +257,7 @@ describe('publication types', () => {
     expect(postStats({ ...post('p', { impressions: 1 }), permalink: 'https://www.instagram.com/p/abc/' }).vertical).toBe(false);
   });
   it('ignores spend below the minimum for the top CPM', () => {
-    const rows = [post('tiny', { impressions: 10 }, { spend: 0.2, impressions: 1000 }), post('real', { impressions: 10 }, { spend: 50, impressions: 10000 })].map(postStats);
+    const rows = [post('tiny', { impressions: 10 }, { spend: 0.2, impressions: 1000 }), post('real', { impressions: 10 }, { spend: 50, impressions: 10000 })].map(x => postStats(x));
     expect(topPosts(rows).cpm?.id).toBe('real');
     expect(topPosts([postStats(post('tiny', { impressions: 10 }, { spend: 0.2, impressions: 1000 }))]).cpm).toBeNull();
   });
@@ -294,7 +333,7 @@ describe('format filter options', () => {
     expect(postStats({ ...post('r', { impressions: 1 }), format: 'Reel' }).format).toBe('Vidéo');
   });
   it('lists only the formats present, in the usual order', () => {
-    const rows = [{ ...post('a', { impressions: 1 }), format: 'Autre' }, { ...post('b', { impressions: 1 }), format: 'Vidéo' }, { ...post('c', { impressions: 1 }), format: 'Photo' }, { ...post('d', { impressions: 1 }), format: 'Photo' }].map(postStats);
+    const rows = [{ ...post('a', { impressions: 1 }), format: 'Autre' }, { ...post('b', { impressions: 1 }), format: 'Vidéo' }, { ...post('c', { impressions: 1 }), format: 'Photo' }, { ...post('d', { impressions: 1 }), format: 'Photo' }].map(x => postStats(x));
     expect(formatOptions(rows)).toEqual(['Photo', 'Vidéo', 'Autre']);
     expect(formatOptions([])).toEqual([]);
   });

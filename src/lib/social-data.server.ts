@@ -3,7 +3,7 @@ import type { Database } from '@/integrations/supabase/types';
 import type { Metrics } from './windsor-mapping';
 import type { SocialDay, SocialPost, SocialAd, AdCoverage } from './social-totals';
 import { mergeStories, type SocialStory, type StoryPull } from './social-stories';
-import { paidOnlyAds } from './top-posts';
+import { paidOnlyAds, unusableStatMonths } from './top-posts';
 import { applyRuleLinks, groupUnlinkedAds, linkAdsToPosts, parseAdNameDate, LINK_PLATFORMS, type TwinAd } from './ad-post-link';
 import { THUMBNAIL_BUCKET } from './windsor-config';
 import { client } from './client';
@@ -37,6 +37,19 @@ async function loadSponsored(db: SupabaseClient<Database>, postIds: string[]): P
     }
   }
   return out;
+}
+/**
+ * Mois (par réseau) dont les statistiques par publication sont inutilisables (voir unusableStatMonths) : lecture légère de toutes les publications
+ * (réseau, date, chiffres), indépendante de la période affichée pour que le même mois s'affiche pareil partout. Jamais bloquante : en cas d'échec, aucun mois n'est écarté.
+ */
+async function loadStatGaps(db: SupabaseClient<Database>): Promise<{ months: string[]; failed: boolean }> {
+  try {
+    const rows = await readAll((a, b) => db.from('social_posts').select('platform,published_at,metrics').order('platform').order('post_id').range(a, b), 'Lecture des statistiques des publications impossible');
+    return { months: unusableStatMonths(rows.map(r => ({ platform: r.platform, published_at: r.published_at, metrics: r.metrics as Metrics }))), failed: false };
+  } catch (error) {
+    console.warn('social-data: statistiques des publications illisibles, aucun mois écarté', error instanceof Error ? error.message : error);
+    return { months: [], failed: true };
+  }
 }
 /** Table absente (migration pas encore passée) : PostgREST répond PGRST205 (ou 42P01 côté Postgres). */
 const isMissingTable = (error: unknown) => ['PGRST205', '42P01'].includes((error as { cause?: { code?: string } }).cause?.code ?? '');
@@ -106,8 +119,8 @@ export async function loadSocialData(data: { period: PeriodInput; comparison: Pe
     console.error('social-data: lecture impossible', error instanceof Error ? error.message : error, (error as { cause?: { code?: string } }).cause?.code ?? '');
     throw error;
   }
-  // Un résultat dont la lecture des stories a échoué n'est pas gardé : la prochaine demande réessaie.
-  if (ttl > 0 && !value.storiesFailed) {
+  // Un résultat dont la lecture des stories ou des statistiques de publications a échoué n'est pas gardé : la prochaine demande réessaie.
+  if (ttl > 0 && !value.storiesFailed && !value.statGapsFailed) {
     cache.set(key, { at: Date.now(), value });
     if (cache.size > 12) cache.delete(cache.keys().next().value as string);
   }
@@ -123,6 +136,7 @@ async function computeSocialData(data: { period: PeriodInput; comparison: Period
     } } });
     const ranges = [data.period, data.comparison];
     // Independent reads run together; every table is read page by page (1 000 rows) on a unique ordering.
+    const statGapsRead = loadStatGaps(db);
     const adDaysRead = readAll(
       (a, b) => db.from('social_ad_creative_daily').select('platform,ad_id,day,post_id,spend,impressions,likes,comments,shares').gte('day', data.period.start).lte('day', data.period.end).order('platform').order('ad_id').order('day').range(a, b),
       'Lecture des publicités impossible',
@@ -292,5 +306,6 @@ async function computeSocialData(data: { period: PeriodInput; comparison: Period
     if (audience.error) throw new Error('Lecture de l’audience impossible');
     const status = await db.from('social_sync_status').select('source,state,last_success_at');
     if (status.error) throw new Error('État des sources indisponible');
-    return { days:mergeFollowerHistory(mergeOrganicHistory(days,organicHistory),manual), posts, promotedPosts: promoted, paidAds, adLinking, ads, adCoverage, stories, storyPulls, storiesFailed, audience: audience.data, statuses: status.data };
+    const statGaps = await statGapsRead;
+    return { days:mergeFollowerHistory(mergeOrganicHistory(days,organicHistory),manual), posts, promotedPosts: promoted, paidAds, adLinking, ads, adCoverage, stories, storyPulls, storiesFailed, unusableStatMonths: statGaps.months, statGapsFailed: statGaps.failed, audience: audience.data, statuses: status.data };
 }

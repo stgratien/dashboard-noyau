@@ -1,4 +1,4 @@
-import { Fragment, useContext, useState } from "react";
+import { Fragment, useContext, useMemo, useState } from "react";
 import { realBlendedTotals, type SocialPost } from "@/lib/social-totals";
 import { formatPercent, videosNote } from "@/lib/dashboard-format";
 import { CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, LineChart, Line } from "recharts";
@@ -164,19 +164,21 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
   const [page, setPage] = useState(0);
   // Rendu hors écran pour le rapport : la mise en page suit l'hôte de 1352 px, pas la largeur de la fenêtre (les classes lg:/sm: sont des requêtes de fenêtre).
   const forReport = useContext(ReportRowLimit) !== undefined;
+  // Mois dont le réseau ne fournit plus les statistiques par publication : leurs impressions sont inconnues (« — »).
+  const statGaps = useMemo(() => new Set(data.unusableStatMonths), [data.unusableStatMonths]);
   const inPeriodPosts = data.posts
     .filter(
       (x) =>
         x.platform === p && x.published_at.slice(0, 10) >= period.start && x.published_at.slice(0, 10) <= period.end,
     )
-    .map(postStats);
+    .map((x) => postStats(x, statGaps));
   // Publications d'avant la période, promues pendant celle-ci (liées nativement ou par le nom de l'annonce).
   const promotedPosts = data.promotedPosts
     .filter(
       (x) =>
         x.platform === p && !(x.published_at.slice(0, 10) >= period.start && x.published_at.slice(0, 10) <= period.end),
     )
-    .map(postStats);
+    .map((x) => postStats(x, statGaps));
   const tableRows = [
     ...inPeriodPosts,
     ...promotedPosts,

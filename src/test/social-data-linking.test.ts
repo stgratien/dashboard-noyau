@@ -60,6 +60,38 @@ beforeEach(() => {
 });
 
 describe('loadSocialData: organic ↔ paid linking', () => {
+  it('lists the months whose post statistics the network no longer provides, whatever the period shown', async () => {
+    const stats = (impressions: number) => ({ metrics: { impressions, likes: 50, comments: 2, shares: 1 } });
+    state.tables['social_posts'] = [
+      post('linkedin', 'old1', '2024-04-08T08:00:00Z', 'A', stats(5)), post('linkedin', 'old2', '2024-04-09T08:00:00Z', 'B', stats(9)), post('linkedin', 'old3', '2024-04-10T08:00:00Z', 'C', stats(400)),
+      post('linkedin', 'new1', '2026-10-04T08:00:00Z', 'D', stats(3000)), post('instagram', 'ig1', '2026-10-05T08:00:00Z', 'E', stats(900)),
+    ];
+    const r = await loadSocialData({ period, comparison });
+    expect(r.unusableStatMonths).toEqual(['linkedin:2024-04']);
+  });
+
+  it('does not keep in the cache a result whose post statistics could not be read', async () => {
+    process.env['SOCIAL_DATA_CACHE_MS'] = '60000';
+    const stats = (impressions: number) => ({ metrics: { impressions, likes: 50, comments: 2, shares: 1 } });
+    state.tables['social_posts'] = [post('linkedin', 'o1', '2024-04-08T08:00:00Z', 'A', stats(5)), post('linkedin', 'o2', '2024-04-09T08:00:00Z', 'B', stats(9)), post('linkedin', 'n1', '2026-10-04T08:00:00Z', 'C', stats(3000))];
+    state.failOn = (table, ops) => table === 'social_posts' && ops.length === 0;
+    expect((await loadSocialData({ period, comparison })).unusableStatMonths).toEqual([]);
+    state.failOn = null;
+    // The failed read was not cached: the next request reads again and finds the month.
+    expect((await loadSocialData({ period, comparison })).unusableStatMonths).toEqual(['linkedin:2024-04']);
+    // A healthy result is cached: a third request does not read the posts again.
+    state.tables['social_posts'] = [];
+    expect((await loadSocialData({ period, comparison })).unusableStatMonths).toEqual(['linkedin:2024-04']);
+  });
+
+  it('never fails when the post statistics cannot be read: no month is set aside', async () => {
+    state.tables['social_posts'] = [post('linkedin', 'p', '2026-10-04T08:00:00Z', 'D')];
+    state.failOn = (table, ops) => table === 'social_posts' && ops.length === 0;
+    const r = await loadSocialData({ period, comparison });
+    expect(r.unusableStatMonths).toEqual([]);
+    expect(r.posts.map(p => p.post_id)).toEqual(['p']);
+  });
+
   it('links an ad without a stored post to the post of the date in its name and moves it out of the Paid rows', async () => {
     state.tables['social_posts'] = [post('instagram', 'ig-oct4', '2026-10-04T08:00:00Z', 'Une semaine de l’espace'), post('instagram', 'ig-oct9', '2026-10-09T08:00:00Z', 'Autre')];
     state.tables['social_ad_creatives'] = [{ platform: 'instagram', ad_id: 'X', ad_name: '04102026_post1semainedelespace_IG', thumbnail_path: null }];

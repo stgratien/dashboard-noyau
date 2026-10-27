@@ -99,9 +99,10 @@ function createCaptureStats() {
 /** Les publications de la période (et celles d'avant, promues pendant), classées par impressions : le tri par défaut du tableau Top publications. */
 export function reportPosts(data: SocialData, p: PlatformId, period: Period) {
   const inPeriod = (day: string) => day >= period.start && day <= period.end;
+  const statGaps = new Set(data.unusableStatMonths);
   const rows = [
-    ...data.posts.filter((x) => x.platform === p && inPeriod(x.published_at.slice(0, 10))).map(postStats),
-    ...data.promotedPosts.filter((x) => x.platform === p && !inPeriod(x.published_at.slice(0, 10))).map(postStats),
+    ...data.posts.filter((x) => x.platform === p && inPeriod(x.published_at.slice(0, 10))).map((x) => postStats(x, statGaps)),
+    ...data.promotedPosts.filter((x) => x.platform === p && !inPeriod(x.published_at.slice(0, 10))).map((x) => postStats(x, statGaps)),
   ];
   return sortRows(rows, "impressions", "desc").slice(0, REPORT_POST_CARDS);
 }

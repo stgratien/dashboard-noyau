@@ -2,6 +2,7 @@ import type { SocialPost } from './social-totals';
 import { facebookPostUrl, safePostUrl } from './post-links';
 import type { KpiKey } from './kpi-definitions';
 import { VIDEO_FORMATS } from './windsor-mapping';
+import { dayNumber, isoFromDay, todayISO } from './dashboard-periods';
 
 /** Dépense minimale pour concourir au « Top CPM » : un débordement de quelques centimes ne doit pas gagner. */
 export const MIN_CPM_SPEND = 5;
@@ -25,16 +26,46 @@ export const cleanPostText = (platform: string, text: string) =>
     .replace(/\{hashtag\|\\?#\|([^}]*)\}/g, '#$1')
     .replace(/@\[([^\]]*)\]\(urn:li:[^)]*\)/g, '@$1')
     .replace(/\\([\\(){}[\]<>#*_|~@])/g, '$1');
-/** Per-post figures; budget/CPM come only from ads linked to the post, never from account totals. */
-export function postStats(x: SocialPost) {
+/** Interactions connues (au moins) supérieures aux impressions déclarées : impossible, le réseau ne fournit plus les statistiques de la publication. */
+export const impossibleImpressions = (metrics: Record<string, number | null>) => {
+  const reported = metrics['impressions'] ?? null;
+  return reported != null && (metrics['likes'] ?? 0) + (metrics['comments'] ?? 0) + (metrics['shares'] ?? 0) > reported;
+};
+/** Mois (jour de Paris) d'une publication : « plateforme:AAAA-MM », la clé des mois dont les statistiques sont inutilisables. */
+const PARIS_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' });
+export const postMonthKey = (platform: string, publishedAt: string) => `${platform}:${PARIS_DAY.format(new Date(publishedAt)).slice(0, 7)}`;
+/**
+ * Un mois d'un réseau est inutilisable quand au moins deux de ses publications, et au moins le quart, ont des impressions impossibles, ET qu'il est fini depuis assez
+ * longtemps (un an) pour que le réseau ait pu en perdre les statistiques : un mois récent dont deux publications n'ont pas encore leurs chiffres (0 impression, des j'aime)
+ * ne fait jamais perdre leurs impressions aux publications saines.
+ */
+export const STAT_GAP_MIN_POSTS = 2;
+export const STAT_GAP_MIN_SHARE = 0.25;
+export const STAT_GAP_MIN_AGE_DAYS = 365;
+/**
+ * Mois (par réseau) dont les statistiques par publication sont inutilisables : LinkedIn ne garde ces statistiques qu'environ 14 mois, et toutes les publications d'un
+ * mois plus ancien en sont privées, y compris celles qui ont encore peu d'interactions et que la règle des impressions impossibles ne peut pas repérer une à une.
+ */
+export function unusableStatMonths(posts: { platform: string; published_at: string; metrics: Record<string, number | null> }[], today = todayISO()): string[] {
+  const months = new Map<string, { total: number; bad: number }>();
+  for (const x of posts) {
+    const key = postMonthKey(x.platform, x.published_at), o = months.get(key) ?? { total: 0, bad: 0 };
+    o.total++;
+    if (impossibleImpressions(x.metrics)) o.bad++;
+    months.set(key, o);
+  }
+  const oldEnough = isoFromDay(dayNumber(today) - STAT_GAP_MIN_AGE_DAYS);
+  const monthEnd = (key: string) => { const [y, m] = (key.split(':')[1] ?? '').split('-').map(Number); return new Date(Date.UTC(y ?? 0, m ?? 0, 0)).toISOString().slice(0, 10); };
+  return [...months].filter(([key, o]) => o.bad >= STAT_GAP_MIN_POSTS && o.bad / o.total >= STAT_GAP_MIN_SHARE && monthEnd(key) <= oldEnough).map(([key]) => key).sort();
+}
+/** Per-post figures; budget/CPM come only from ads linked to the post, never from account totals. `unusableMonths` : voir unusableStatMonths. */
+export function postStats(x: SocialPost, unusableMonths?: ReadonlySet<string>) {
   const n = (k: string) => x.metrics[k] ?? null;
   const likes = n('likes'), comments = n('comments'), shares = n('shares');
   const interactions = likes == null || comments == null || shares == null ? null : likes + comments + shares;
-  // Des interactions supérieures aux impressions sont impossibles : le réseau ne fournit plus les statistiques de cette publication (LinkedIn ne les garde qu'environ 14 mois).
-  // Les impressions sont alors inconnues (« — », hors classements) : jamais un taux d'engagement de 182 %. Même une partie connue des interactions suffit (minorant).
-  const reported = n('impressions');
-  const knownInteractions = (likes ?? 0) + (comments ?? 0) + (shares ?? 0);
-  const impressions = reported != null && knownInteractions > reported ? null : reported;
+  // Impressions inconnues (« — », hors classements, sans taux d'engagement) quand elles sont impossibles (interactions supérieures : jamais un taux de 182 %)
+  // ou quand tout le mois de la publication a perdu ses statistiques auprès du réseau (LinkedIn ne les garde qu'environ 14 mois).
+  const impressions = impossibleImpressions(x.metrics) || unusableMonths?.has(postMonthKey(x.platform, x.published_at)) ? null : n('impressions');
   const spend = x.sponsored && x.sponsored.spend > 0 ? x.sponsored.spend : null;
   const cpm = spend != null && x.sponsored && x.sponsored.impressions > 0 ? spend / x.sponsored.impressions * 1000 : null;
   // CPE : budget de ses annonces ÷ interactions totales de la publication (j'aime + commentaires + partages, organique et payant confondus, comme les colonnes du tableau).
