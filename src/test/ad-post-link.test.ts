@@ -4,7 +4,7 @@ import {
   type LinkableAd, type LinkablePost,
 } from '@/lib/ad-post-link';
 import type { PaidAd } from '@/lib/top-posts';
-import type { SocialPost, Sponsored } from '@/lib/social-totals';
+import type { SocialPost } from '@/lib/social-totals';
 
 // The stop words of the neutral configuration are "metropole" and "forum" (the real client's words never reach a generic test).
 vi.mock('@/client/config', async () => (await import('@/test/fixtures/neutral-client')).neutralClientModule());
@@ -116,7 +116,7 @@ describe('groupUnlinkedAds', () => {
 });
 
 describe('applyRuleLinks', () => {
-  const social = (post_id: string, published_at = '2026-10-04T08:00:00Z', sponsored?: Sponsored): SocialPost =>
+  const social = (post_id: string, published_at = '2026-10-04T08:00:00Z', sponsored?: { spend: number; impressions: number }): SocialPost =>
     ({ platform: 'instagram', post_id, published_at, title: post_id, format: 'Photo', permalink: '', thumbnail_path: null, metrics: {}, ...(sponsored ? { sponsored } : {}) });
 
   it('adds the lifetime delivery of the ad to the post, once, and reports what it applied', () => {
@@ -142,13 +142,5 @@ describe('applyRuleLinks', () => {
     const { touched } = applyRuleLinks(links, new Map([['a', { spend: 5, impressions: 100 }], ['b', { spend: 7, impressions: 300 }]]), [target], []);
     expect(touched).toHaveLength(1);
     expect(target.sponsored).toEqual({ spend: 12, impressions: 400 });
-  });
-
-  it('carries the budget / engagements pair of the ads along with the delivery', () => {
-    const target = social('p1', '2026-10-04T08:00:00Z', { spend: 4, impressions: 400, engagement: { spend: 4, count: 2 } });
-    const links = new Map([['a', { ad_id: 'a', platform: 'instagram', post_id: 'p1', by: 'date' as const }], ['b', { ad_id: 'b', platform: 'instagram', post_id: 'p1', by: 'date' as const }]]);
-    applyRuleLinks(links, new Map([['a', { spend: 6, impressions: 100, engagement: { spend: 6, count: 3 } }], ['b', { spend: 7, impressions: 300 }]]), [target], []);
-    // The ad without known engagements adds its budget but not to the pair: the pair no longer covers the budget, so no CPE will be shown.
-    expect(target.sponsored).toEqual({ spend: 17, impressions: 800, engagement: { spend: 10, count: 5 } });
   });
 });

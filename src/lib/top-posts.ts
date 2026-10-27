@@ -1,4 +1,4 @@
-import { deliveryEngagement, type SocialPost, type Sponsored } from './social-totals';
+import type { SocialPost } from './social-totals';
 import { facebookPostUrl, safePostUrl } from './post-links';
 import type { KpiKey } from './kpi-definitions';
 import { VIDEO_FORMATS } from './windsor-mapping';
@@ -25,13 +25,6 @@ export const cleanPostText = (platform: string, text: string) =>
     .replace(/\{hashtag\|\\?#\|([^}]*)\}/g, '#$1')
     .replace(/@\[([^\]]*)\]\(urn:li:[^)]*\)/g, '@$1')
     .replace(/\\([\\(){}[\]<>#*_|~@])/g, '$1');
-/**
- * CPE : budget ÷ engagements des annonces (j'aime + commentaires + partages), jamais ceux de la publication entière (organique compris).
- * Le couple budget / engagements ne vient que des lignes de diffusion qui ont leurs engagements : il doit recouvrir le budget affiché à 1 % près,
- * dans les deux sens (un historique d'engagements plus court donne moins, une ligne rangée autrement peut donner plus), sinon pas de CPE : jamais un ratio partiel.
- */
-export const cpeOf = (spend: number | null, paid: Sponsored['engagement']) =>
-  spend != null && paid && paid.count > 0 && Math.abs(paid.spend - spend) <= spend * 0.01 ? paid.spend / paid.count : null;
 /** Per-post figures; budget/CPM come only from ads linked to the post, never from account totals. */
 export function postStats(x: SocialPost) {
   const n = (k: string) => x.metrics[k] ?? null;
@@ -39,7 +32,8 @@ export function postStats(x: SocialPost) {
   const interactions = likes == null || comments == null || shares == null ? null : likes + comments + shares;
   const spend = x.sponsored && x.sponsored.spend > 0 ? x.sponsored.spend : null;
   const cpm = spend != null && x.sponsored && x.sponsored.impressions > 0 ? spend / x.sponsored.impressions * 1000 : null;
-  const cpe = cpeOf(spend, x.sponsored?.engagement);
+  // CPE : budget de ses annonces ÷ interactions totales de la publication (j'aime + commentaires + partages, organique et payant confondus, comme les colonnes du tableau).
+  const cpe = spend != null && interactions ? spend / interactions : null;
   return {
     id: x.post_id, title: cleanPostText(x.platform, x.title) || 'Publication', format: postFormat(x.platform, x.format), vertical: x.platform === 'tiktok' || x.format === 'Reel' || /\/reels?\//.test(x.permalink ?? ''),
     thumbnail_url: x.thumbnail_url ?? '', permalink: safePostUrl(x.platform, x.permalink),
@@ -55,8 +49,7 @@ export function postStats(x: SocialPost) {
 
 export type PostType = 'Organique' | 'Paid';
 export type AdDay = { platform: string; ad_id: string; day: string; post_id: string | null; spend: number; impressions: number; likes: number | null; comments: number | null; shares: number | null };
-/** `engagement` : budget et engagements des seuls jours de diffusion dont les trois engagements sont connus (le CPE exige qu'il recouvre tout le budget). */
-export type PaidAd = { platform: string; ad_id: string; title: string; thumbnail_url: string; first_day: string; spend: number; impressions: number; likes: number | null; comments: number | null; shares: number | null; permalink: string; engagement?: Sponsored['engagement'] };
+export type PaidAd = { platform: string; ad_id: string; title: string; thumbnail_url: string; first_day: string; spend: number; impressions: number; likes: number | null; comments: number | null; shares: number | null; permalink: string };
 /** Ads delivering in the period whose promoted post is not a stored publication of the account (dark posts). */
 export function paidOnlyAds(days: AdDay[], creatives: { platform: string; ad_id: string; ad_name: string | null; thumbnail_url?: string }[], knownPosts: Set<string>): PaidAd[] {
   const add = (a: number | null, b: number | null) => a == null && b == null ? null : (a ?? 0) + (b ?? 0);
@@ -69,8 +62,6 @@ export function paidOnlyAds(days: AdDay[], creatives: { platform: string; ad_id:
     const k = `${d.platform}:${d.ad_id}`, c = creatives.find(x => x.platform === d.platform && x.ad_id === d.ad_id);
     const o = m.get(k) ?? { platform: d.platform, ad_id: d.ad_id, title: c?.ad_name || 'Publicité', thumbnail_url: c?.thumbnail_url ?? '', first_day: d.day, spend: 0, impressions: 0, likes: null, comments: null, shares: null, permalink: '' };
     o.spend += d.spend; o.impressions += d.impressions; o.likes = add(o.likes, d.likes); o.comments = add(o.comments, d.comments); o.shares = add(o.shares, d.shares);
-    const e = deliveryEngagement(d);
-    if (e) o.engagement = { spend: (o.engagement?.spend ?? 0) + e.spend, count: (o.engagement?.count ?? 0) + e.count };
     if (d.day < o.first_day) o.first_day = d.day;
     // Facebook : le lien de la publication se reconstruit depuis son identifiant « page_publication » (visible surtout des administrateurs si elle n'est pas publiée).
     if (!o.permalink && d.platform === 'facebook') o.permalink = facebookPostUrl(d.post_id);
@@ -88,7 +79,7 @@ export function paidAdStats(a: PaidAd): PostStats {
     impressions: views, likes: a.likes, comments: a.comments, shares: a.shares, interactions,
     rate: interactions == null || !views ? null : interactions / views * 100,
     spend: a.spend > 0 ? a.spend : null, cpm: a.spend > 0 && a.impressions > 0 ? a.spend / a.impressions * 1000 : null,
-    cpe: cpeOf(a.spend > 0 ? a.spend : null, a.engagement ?? deliveryEngagement(a)), type: 'Paid', organic: false, adLink: null };
+    cpe: a.spend > 0 && interactions ? a.spend / interactions : null, type: 'Paid', organic: false, adLink: null };
 }
 
 /** Visibilité et engagement : publications de la période (à défaut, publications plus anciennes promues pendant la période). CPM : aussi les publications d'avant la période promues pendant celle-ci (`promoted`). */

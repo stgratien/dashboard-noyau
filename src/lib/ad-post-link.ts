@@ -1,4 +1,4 @@
-import { addSponsored, type SocialPost, type Sponsored } from './social-totals';
+import type { SocialPost } from './social-totals';
 import { client } from './client';
 import type { PaidAd } from './top-posts';
 
@@ -151,7 +151,7 @@ export function linkAdsToPosts(ads: LinkableAd[], posts: LinkablePost[], twins: 
  */
 export function applyRuleLinks(
   links: Map<string, AdPostLink>,
-  adTotals: Map<string, Sponsored>,
+  adTotals: Map<string, { spend: number; impressions: number }>,
   posts: SocialPost[],
   candidates: SocialPost[],
 ): { touched: SocialPost[]; applied: Set<string> } {
@@ -164,7 +164,8 @@ export function applyRuleLinks(
     const key = `${link.platform}:${link.post_id}`;
     const post = byKey.get(key), total = adTotals.get(link.ad_id);
     if (!post || !total) continue;
-    post.sponsored = addSponsored(post.sponsored, total);
+    const s = post.sponsored ?? { spend: 0, impressions: 0 };
+    post.sponsored = { spend: s.spend + total.spend, impressions: s.impressions + total.impressions };
     post.adLink = link.by === 'manual' ? 'manual' : 'rule';
     touched.set(key, post);
     applied.add(link.ad_id);

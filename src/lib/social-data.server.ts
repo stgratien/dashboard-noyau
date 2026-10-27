@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/integrations/supabase/types';
 import type { Metrics } from './windsor-mapping';
-import { addSponsored, deliveryEngagement, type SocialDay, type SocialPost, type SocialAd, type AdCoverage, type Sponsored } from './social-totals';
+import type { SocialDay, SocialPost, SocialAd, AdCoverage } from './social-totals';
 import { mergeStories, type SocialStory, type StoryPull } from './social-stories';
 import { paidOnlyAds } from './top-posts';
 import { applyRuleLinks, groupUnlinkedAds, linkAdsToPosts, parseAdNameDate, LINK_PLATFORMS, type TwinAd } from './ad-post-link';
@@ -23,12 +23,8 @@ async function readAll<T>(page: (from: number, to: number) => Page<T>, failure: 
     if (r.data.length < 1000) return out;
   }
 }
-/**
- * Lifetime delivery of the ads natively linked to the given posts (ad × post × day), per `platform:post_id`.
- * Budget and impressions come from social_post_ad_daily; the ads' engagements (CPE) from social_ad_creative_daily, which carries them per
- * ad × day and the same post id, but only from its own, shorter history: the pair is kept apart (`engagement`) and the CPE is shown only when it covers
- * the whole budget. A failed engagement read never hides budget and CPM: those posts simply have no CPE.
- */
+type Sponsored = { spend: number; impressions: number };
+/** Lifetime delivery of the ads natively linked to the given posts (ad × post × day), per `platform:post_id`. */
 async function loadSponsored(db: SupabaseClient<Database>, postIds: string[]): Promise<Map<string, Sponsored>> {
   const out = new Map<string, Sponsored>();
   const ids = [...new Set(postIds)];
@@ -36,27 +32,10 @@ async function loadSponsored(db: SupabaseClient<Database>, postIds: string[]): P
     for (let offset = 0; ; offset += 1000) {
       const r = await db.from('social_post_ad_daily').select('platform,post_id,spend,impressions').in('post_id', ids.slice(i, i + 150)).order('platform').order('post_id').order('ad_id').order('day').range(offset, offset + 999);
       if (r.error) throw new Error('Lecture des publications sponsorisées impossible');
-      for (const row of r.data) { const k = `${row.platform}:${row.post_id}`; out.set(k, addSponsored(out.get(k), { spend: Number(row.spend), impressions: Number(row.impressions) })); }
+      for (const row of r.data) { const k = `${row.platform}:${row.post_id}`, o = out.get(k) ?? { spend: 0, impressions: 0 }; out.set(k, { spend: o.spend + Number(row.spend), impressions: o.impressions + Number(row.impressions) }); }
       if (r.data.length < 1000) break;
     }
   }
-  const sponsoredIds = [...new Set([...out.keys()].map(k => k.slice(k.indexOf(':') + 1)))];
-  const engagement = new Map<string, NonNullable<Sponsored['engagement']>>();
-  try {
-    for (let i = 0; i < sponsoredIds.length; i += 150) {
-      const rows = await readAll((a, b) => db.from('social_ad_creative_daily').select('post_id,spend,likes,comments,shares').in('post_id', sponsoredIds.slice(i, i + 150)).order('source').order('platform').order('ad_id').order('day').range(a, b), 'Lecture des engagements des annonces impossible');
-      for (const row of rows) {
-        const e = row.post_id ? deliveryEngagement({ spend: Number(row.spend), likes: toNumber(row.likes), comments: toNumber(row.comments), shares: toNumber(row.shares) }) : undefined;
-        if (!row.post_id || !e) continue;
-        const o = engagement.get(row.post_id);
-        engagement.set(row.post_id, { spend: (o?.spend ?? 0) + e.spend, count: (o?.count ?? 0) + e.count });
-      }
-    }
-  } catch (error) {
-    engagement.clear();
-    console.warn('social-data: engagements des annonces illisibles, CPE absent', error instanceof Error ? error.message : error);
-  }
-  for (const [k, s] of out) { const e = engagement.get(k.slice(k.indexOf(':') + 1)); if (e) out.set(k, { ...s, engagement: e }); }
   return out;
 }
 /** Table absente (migration pas encore passée) : PostgREST répond PGRST205 (ou 42P01 côté Postgres). */
@@ -265,13 +244,13 @@ async function computeSocialData(data: { period: PeriodInput; comparison: Period
           }
           // Lifetime delivery of the linked ads, all placements together, except the rows already attributed to a stored post
           // (their budget is the native one of that post: counting it again would double it).
-          const rows: { ad_id: string; platform: string; post_id: string | null; spend: number; impressions: number; likes: number | null; comments: number | null; shares: number | null }[] = [];
+          const rows: { ad_id: string; platform: string; post_id: string | null; spend: number; impressions: number }[] = [];
           const linkedIds = [...links.keys()];
           for (let i = 0; i < linkedIds.length; i += 150) {
             for (let offset = 0; ; offset += 1000) {
-              const r = await db.from('social_ad_creative_daily').select('ad_id,platform,post_id,spend,impressions,likes,comments,shares').in('ad_id', linkedIds.slice(i, i + 150)).order('ad_id').order('platform').order('day').range(offset, offset + 999);
+              const r = await db.from('social_ad_creative_daily').select('ad_id,platform,post_id,spend,impressions').in('ad_id', linkedIds.slice(i, i + 150)).order('ad_id').order('platform').order('day').range(offset, offset + 999);
               if (r.error) throw new Error('Lecture de la diffusion des annonces impossible');
-              rows.push(...r.data.map(d => ({ ...d, spend: Number(d.spend), impressions: Number(d.impressions), likes: toNumber(d.likes), comments: toNumber(d.comments), shares: toNumber(d.shares) })));
+              rows.push(...r.data.map(d => ({ ...d, spend: Number(d.spend), impressions: Number(d.impressions) })));
               if (r.data.length < 1000) break;
             }
           }
@@ -285,8 +264,8 @@ async function computeSocialData(data: { period: PeriodInput; comparison: Period
           const totals = new Map<string, Sponsored>();
           for (const row of rows) {
             if (row.post_id && stored.has(row.post_id)) continue;
-            const engagement = deliveryEngagement(row);
-            totals.set(row.ad_id, addSponsored(totals.get(row.ad_id), { spend: row.spend, impressions: row.impressions, ...(engagement ? { engagement } : {}) }));
+            const o = totals.get(row.ad_id) ?? { spend: 0, impressions: 0 };
+            totals.set(row.ad_id, { spend: o.spend + row.spend, impressions: o.impressions + row.impressions });
           }
           const { touched, applied } = applyRuleLinks(links, totals, [...posts, ...promoted], candidates);
           for (const id of applied) { if (links.get(id)?.by === 'manual') adLinking.manual++; else adLinking.rule++; }

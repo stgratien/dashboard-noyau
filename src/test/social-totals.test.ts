@@ -43,9 +43,25 @@ describe('real Windsor aggregates', () => {
     expect(formatEuro(Number.NaN)).toBe('Donnée non disponible');
     expect(formatNumber(null)).toBe('Donnée non disponible');
   });
-  it('uses paid-only engagements and 2-second paid views for cost ratios', () => {
+  it('divides the budget by the total interactions (organic + paid) for the CPE, on every network and in Global', () => {
     const facebook = realBlendedTotals('facebook', days, posts, period, []);
-    expect(facebook.cpe).toBe(20 / 15);
+    expect(facebook.interactions).toBe(30);
+    expect(facebook.cpe).toBe(20 / 30);
+    const global = realAllNetworkTotals(PLATFORMS.map(({ id }) => realBlendedTotals(id, days, posts, period, [])));
+    expect(global.cpe).toBe((global.spend ?? 0) / (global.interactions ?? 1));
+    // Without the organic source the interactions are partial, and so is the CPE.
+    const noOrganic = realBlendedTotals('facebook', days.filter(d => d.source !== 'facebook_organic'), posts, period, []);
+    expect(noOrganic.missing['cpe']).toEqual(['facebook:organic']);
+  });
+  it('has no CPE without a budget, never 0,00 €', () => {
+    const noBudget = days.map(d => ({ ...d, metrics: { ...d.metrics, spend: 0 } }));
+    const facebook = realBlendedTotals('facebook', noBudget, posts, period, []);
+    expect(facebook.spend).toBe(0);
+    expect(facebook.cpe).toBeNull();
+    expect(realAllNetworkTotals(PLATFORMS.map(({ id }) => realBlendedTotals(id, noBudget, posts, period, []))).cpe).toBeNull();
+  });
+  it('uses 2-second paid views for the cost per view', () => {
+    const facebook = realBlendedTotals('facebook', days, posts, period, []);
     expect(facebook.cpv).toBe(20 / 100);
     const noPaidViews = days.map(d => d.source === 'tiktok' ? { ...d, metrics: { ...d.metrics, videoViews: 0 } } : d);
     expect(realBlendedTotals('tiktok', noPaidViews, posts, period, []).cpv).toBeNull();

@@ -11,23 +11,6 @@ export type SocialDay = {
   metrics: Metrics;
   followers_estimated: boolean;
 };
-/**
- * Diffusion sponsorisée d'une publication. `engagement` apparie le budget et les engagements des annonces (j'aime + commentaires + partages) des seules
- * lignes de diffusion dont les engagements sont connus : le CPE n'est calculé que si ce budget couvre tout celui de la publication.
- */
-export type Sponsored = { spend: number; impressions: number; engagement?: { spend: number; count: number } };
-/** Budget et engagements d'une ligne de diffusion ; rien quand l'un des trois engagements est inconnu (jamais compté comme zéro). */
-export function deliveryEngagement(row: { spend: number; likes: number | null; comments: number | null; shares: number | null }): Sponsored['engagement'] {
-  const count = nullableSum([row.likes, row.comments, row.shares]);
-  return count == null ? undefined : { spend: row.spend, count };
-}
-/** Additionne deux diffusions sponsorisées (le couple budget / engagements suit la même addition). */
-export function addSponsored(a: Sponsored | undefined, b: Sponsored): Sponsored {
-  const engagement = a?.engagement || b.engagement
-    ? { spend: (a?.engagement?.spend ?? 0) + (b.engagement?.spend ?? 0), count: (a?.engagement?.count ?? 0) + (b.engagement?.count ?? 0) }
-    : undefined;
-  return { spend: (a?.spend ?? 0) + b.spend, impressions: (a?.impressions ?? 0) + b.impressions, ...(engagement ? { engagement } : {}) };
-}
 export type SocialPost = {
   platform: string;
   post_id: string;
@@ -38,7 +21,7 @@ export type SocialPost = {
   thumbnail_path: string | null;
   metrics: Metrics;
   thumbnail_url?: string;
-  sponsored?: Sponsored;
+  sponsored?: { spend: number; impressions: number };
   /** Annonce rapprochée automatiquement de cette publication (date et titre du nom d'annonce). */
   adLink?: 'rule' | 'manual';
 };
@@ -178,6 +161,8 @@ export function realBlendedTotals(
   missing["interactions"] = [...new Set(["likes", "comments", "shares"].flatMap((key) => missing[key] ?? []))];
   missing["impressionsPerPost"] = missing["impressions"] ?? [];
   missing["engagementRate"] = [...new Set([...(missing["impressions"] ?? []), ...(missing["interactions"] ?? [])])];
+  // Le CPE divise le budget par les interactions totales : il est partiel quand elles le sont.
+  missing["cpe"] = missing["interactions"] ?? [];
   const manualPosts = sum(organic, "manualPostsPublished");
   const posts = manualPosts ?? (sum(organic, "postsAvailable") == null ? null : cohort.length);
   const last = days
@@ -209,14 +194,15 @@ export function realBlendedTotals(
     adKeys,
     adsDelivered: adKeys?.length ?? null,
     paidImpressions: sum(paid, "impressions"),
-    paidEngagements: nullableSum([sum(paid, "likes"), sum(paid, "comments"), sum(paid, "shares")]),
     followerGrowth: followerChange(days, p, period).value,
     followerGrowthPercent: followerChange(days, p, period).percent,
     videos:
       posts == null || cohort.some((post) => post.format === "Post")
         ? null
         : cohort.filter((post) => VIDEO_FORMATS.includes(post.format)).length,
-    cpe: divide(spend, nullableSum([sum(paid, "likes"), sum(paid, "comments"), sum(paid, "shares")])),
+    // CPE : budget (payant) ÷ interactions totales (organique + payant : j'aime + commentaires + partages), comme la carte « Interactions totales ».
+    // Sans dépense (jours payants remplis à zéro), il n'y a pas de CPE : jamais « 0,00 € ».
+    cpe: divide(spend, interactions) || null,
     cpv: divide(spend, sum(paid, "videoViews")),
     followers: last?.metrics["followers"] ?? null,
     estimated: last?.followers_estimated ?? false,
@@ -259,7 +245,6 @@ export function realAllNetworkTotals(totals: RealTotals[]): RealTotals {
       | "spend"
       | "clicks"
       | "paidImpressions"
-      | "paidEngagements"
       | "videos"
       | "followerGrowth",
   ) => {
@@ -290,7 +275,7 @@ export function realAllNetworkTotals(totals: RealTotals[]): RealTotals {
   const adKeys = totals.every((t) => t.adKeys === null) ? null : [...new Set(totals.flatMap((t) => t.adKeys ?? []))];
   const ratio = (
     a: "spend" | "interactions",
-    b: "paidEngagements" | "paidImpressions" | "impressions",
+    b: "interactions" | "paidImpressions" | "impressions",
     key: string,
     m = 1,
   ) => {
@@ -323,10 +308,9 @@ export function realAllNetworkTotals(totals: RealTotals[]): RealTotals {
     organicInteractions: null,
     adKeys,
     adsDelivered: adKeys?.length ?? null,
-    cpe: ratio("spend", "paidEngagements", "cpe"),
+    cpe: ratio("spend", "interactions", "cpe") || null,
     cpv: null,
     paidImpressions: sum("paidImpressions"),
-    paidEngagements: sum("paidEngagements"),
     videos: sum("videos"),
     followerGrowth: growth,
     followerGrowthPercent: growthRows.length && baseline ? (growthComparable / baseline) * 100 : null,

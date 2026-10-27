@@ -396,12 +396,12 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
           />
         ) : (
           <Kpi
+            {...coverageDetails(t, "cpe", D("cpe"))}
             label="CPE (coût par engagement)"
             prev={shown(o, eur(o.cpe, 2))}
             value={shown(t, eur(t.cpe, 2))}
-            d={delta(t.cpe, o.cpe)}
+            d={comparableDelta(t, o, "cpe")}
             inverse
-            tooltip={D("cpe")}
           />
         )}
       </BigSection>

@@ -15,6 +15,16 @@ describe('definitions without client notes', () => {
       expect(text, `${key} / ${p}`).not.toMatch(/ {2}|^ | $/);
     }
   });
+  it('define the CPE as the budget over the total interactions, organic and paid, on every network', () => {
+    for (const p of PLATFORMS) {
+      expect(definition('cpe', p)).toContain('interactions totales');
+      expect(definition('cpe', p)).toContain('organique et payant confondus');
+    }
+    expect(definition('cpe', 'all')).toContain('budget des réseaux sociaux ÷ interactions de ces mêmes réseaux (YouTube');
+    expect(definition('cpe', 'tiktok')).toContain('vidéos publiées sur la période');
+    expect(definition('cpe', 'facebook')).not.toContain('YouTube');
+    expect(definition('topPosts', 'linkedin')).toContain('interactions totales de la publication');
+  });
   it('still describe the synchronized publications and the Windsor snapshot', () => {
     expect(definition('posts', 'facebook')).toContain('Le nombre vient des publications synchronisées.');
     expect(definition('followers', 'linkedin')).toContain('(instantané Windsor, sinon reconstitution marquée « Valeur estimée »)');
