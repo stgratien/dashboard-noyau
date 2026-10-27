@@ -2,11 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { postStats, topPosts, sortRows, audienceBreakdowns, audiencePanels, countryName, formatLabel, flopPosts, formatOptions, postFormat, pageWindow, FLOP_COUNT, TABLE_PAGE_SIZE } from '@/lib/top-posts';
 import { pdfFileName } from '@/lib/pdf-export';
 import { definition } from '@/lib/kpi-definitions';
+import type { Sponsored } from '@/lib/social-totals';
 
 // The export file name comes from the configuration: the generic test reads the neutral one (brand "Demo Event").
 vi.mock('@/client/config', async () => (await import('@/test/fixtures/neutral-client')).neutralClientModule());
 
-const post = (id: string, m: Record<string, number>, sponsored?: { spend: number; impressions: number }) => ({ platform: 'instagram', post_id: id, published_at: '2025-06-18T10:00:00Z', title: id, format: 'Photo', permalink: '', thumbnail_path: null, metrics: m, ...(sponsored ? { sponsored } : {}) });
+const post = (id: string, m: Record<string, number>, sponsored?: Sponsored) => ({ platform: 'instagram', post_id: id, published_at: '2025-06-18T10:00:00Z', title: id, format: 'Photo', permalink: '', thumbnail_path: null, metrics: m, ...(sponsored ? { sponsored } : {}) });
 
 describe('top posts', () => {
   it('picks visibility, engagement and lowest sponsored CPM; organic posts have no budget', () => {
@@ -21,6 +22,52 @@ describe('top posts', () => {
   });
   it('has no CPM winner without sponsored posts', () => {
     expect(topPosts([postStats(post('a', { impressions: 1 }))]).cpm).toBeNull();
+  });
+});
+
+describe('CPE of the publications table', () => {
+  const metrics = { impressions: 1000, likes: 500, comments: 50, shares: 50 };
+  it('divides the budget by the ads’ engagements, never by the post’s own counts', () => {
+    const row = postStats(post('a', metrics, { spend: 100, impressions: 20000, engagement: { spend: 100, count: 40 } }));
+    expect(row.cpe).toBe(2.5);
+    expect(row.cpm).toBe(5);
+    expect(row.interactions).toBe(600);
+  });
+  it('stays empty when the engagements do not cover the whole budget, are unknown or are zero', () => {
+    expect(postStats(post('a', metrics, { spend: 100, impressions: 20000, engagement: { spend: 60, count: 40 } })).cpe).toBeNull();
+    expect(postStats(post('b', metrics, { spend: 100, impressions: 20000 })).cpe).toBeNull();
+    expect(postStats(post('c', metrics, { spend: 100, impressions: 20000, engagement: { spend: 100, count: 0 } })).cpe).toBeNull();
+    expect(postStats(post('d', metrics)).cpe).toBeNull();
+    // A gap under 1 % between the budget and the paired budget is tolerated (here 0.50 on 100), in both directions.
+    expect(postStats(post('e', metrics, { spend: 100, impressions: 20000, engagement: { spend: 99.5, count: 50 } })).cpe).toBeCloseTo(1.99);
+    expect(postStats(post('f', metrics, { spend: 100, impressions: 20000, engagement: { spend: 100.5, count: 50 } })).cpe).toBeCloseTo(2.01);
+    // A paired budget larger than the budget shown (rows filed under another post) gives no CPE either.
+    expect(postStats(post('g', metrics, { spend: 100, impressions: 20000, engagement: { spend: 130, count: 40 } })).cpe).toBeNull();
+  });
+  it('gives an ad-only row its own spend over its engagements when the three are known', () => {
+    const ad = { platform: 'instagram', ad_id: 'i', title: 'Pub', thumbnail_url: '', first_day: '2026-10-01', spend: 20, impressions: 5000, permalink: '' };
+    expect(paidAdStats({ ...ad, likes: 10, comments: 1, shares: 1 }).cpe).toBeCloseTo(20 / 12);
+    expect(paidAdStats({ ...ad, likes: 10, comments: null, shares: 1 }).cpe).toBeNull();
+    expect(paidAdStats({ ...ad, likes: 0, comments: 0, shares: 0 }).cpe).toBeNull();
+  });
+  it('gives an ad-only row no CPE when some of its delivery days have no engagements', () => {
+    const day = (d: string, spend: number, e: { likes: number; comments: number; shares: number } | null) =>
+      ({ platform: 'instagram', ad_id: 'X', day: d, post_id: null, spend, impressions: 1000, likes: e?.likes ?? null, comments: e?.comments ?? null, shares: e?.shares ?? null });
+    const partial = paidOnlyAds([day('2026-10-01', 50, { likes: 10, comments: 2, shares: 1 }), day('2026-10-02', 50, null)], [], new Set())[0]!;
+    expect(partial.spend).toBe(100);
+    expect(partial.engagement).toEqual({ spend: 50, count: 13 });
+    expect(paidAdStats(partial).cpe).toBeNull();
+    const full = paidOnlyAds([day('2026-10-01', 50, { likes: 10, comments: 2, shares: 1 }), day('2026-10-02', 50, { likes: 5, comments: 0, shares: 0 })], [], new Set())[0]!;
+    expect(paidAdStats(full).cpe).toBeCloseTo(100 / 18);
+  });
+  it('sorts the table on the CPE, rows without one always last', () => {
+    const rows = [
+      post('a', metrics),
+      post('b', metrics, { spend: 100, impressions: 1000, engagement: { spend: 100, count: 20 } }),
+      post('c', metrics, { spend: 100, impressions: 1000, engagement: { spend: 100, count: 100 } }),
+    ].map(postStats);
+    expect(sortRows(rows, 'cpe', 'asc').map(r => r.id)).toEqual(['c', 'b', 'a']);
+    expect(sortRows(rows, 'cpe', 'desc').map(r => r.id)).toEqual(['b', 'c', 'a']);
   });
 });
 

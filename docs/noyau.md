@@ -86,5 +86,5 @@ Le script active le pilote de fusion `merge.ours` (les fichiers du client listé
 ## Limites connues
 
 - Une source désactivée par choix (un réseau sans compte payant ou sans compte organique) est encore signalée « partielle » dans les totaux et le rapport : à traiter avec les vrais comptes du premier client concerné.
-- Les tests qui contenaient des données du client d'origine ne sont pas livrés avec le noyau : à réécrire avec des jeux de données neutres.
-- Les textes de définition des indicateurs qui parlent d'« export de l'agence » décrivent une source de données facultative du noyau (historiques manuels) ; ils peuvent être surchargés par `kpiNotes`.
+- Les tests génériques lisent une configuration neutre (`src/test/fixtures/neutral-client.ts`) : plus aucun test n'est écarté de l'export. Les faits propres au client d'origine sont dans `src/client/tests/`, jamais livrés avec le noyau.
+- Les textes de définition des indicateurs (`src/lib/kpi-definitions.ts`) ne citent ni agence, ni export, ni date par défaut. L'historique propre à un client se décrit dans `kpiNotes` de sa configuration, tous les champs étant facultatifs : `history` (phrase des chiffres complétés par un historique manuel), `followersFallback`, `newFollowersLinkedin`, `posts`, `storyHistory`, `stories`, `instagramInteractions`.

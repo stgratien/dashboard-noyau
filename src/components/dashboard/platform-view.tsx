@@ -524,7 +524,7 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
                 <SortTh k="shares" label="Partages" right sort={sort} onSort={sortBy} />
                 <SortTh k="rate" label="Taux d’engagement" right sort={sort} onSort={sortBy} />
                 <SortTh k="spend" label="Budget" right sort={sort} onSort={sortBy} />
-                <SortTh k="cpm" label="CPM" right last sort={sort} onSort={sortBy} />
+                <SortTh k="cpe" label="CPE" right last sort={sort} onSort={sortBy} />
               </tr>
             </thead>
             <tbody>
@@ -585,7 +585,7 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
                     <td className="pr-3 text-right">{nf.format(x.shares)}</td>
                     <td className="pr-3 text-right font-medium">{pct(x.rate)}</td>
                     <td className="pr-3 text-right">{x.spend == null ? "" : budget(x.spend)}</td>
-                    <td className="text-right">{x.cpm == null ? "" : eur(x.cpm, 2)}</td>
+                    <td className="text-right">{x.cpe == null ? "" : eur(x.cpe, 2)}</td>
                   </tr>
                 ))
               )}

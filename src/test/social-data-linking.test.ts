@@ -83,6 +83,35 @@ describe('loadSocialData: organic ↔ paid linking', () => {
     expect(r.paidAds).toEqual([]);
   });
 
+  it('pairs the native budget of a post with the engagements of its ads, for the CPE', async () => {
+    state.tables['social_posts'] = [post('instagram', 'P', '2026-10-04T08:00:00Z', 'Une semaine de l’espace')];
+    state.tables['social_ad_creatives'] = [{ platform: 'instagram', ad_id: 'X', ad_name: 'Boost', thumbnail_path: null }, { platform: 'facebook', ad_id: 'X', ad_name: 'Boost', thumbnail_path: null }];
+    state.tables['social_ad_creative_daily'] = [
+      { ...creativeDay('instagram', 'X', '2026-10-06', 'P', 60, 6000), likes: 30, comments: 2, shares: 1 },
+      { ...creativeDay('facebook', 'X', '2026-10-06', 'P', 40, 4000), likes: 10, comments: 1, shares: 1 },
+    ];
+    state.tables['social_post_ad_daily'] = [nativeDay('instagram', 'X', 'P', '2026-10-06', 100, 10000)];
+    const r = await loadSocialData({ period, comparison });
+    expect(r.posts.find(p => p.post_id === 'P')?.sponsored).toEqual({ spend: 100, impressions: 10000, engagement: { spend: 100, count: 45 } });
+  });
+
+  it('keeps the budget and CPM when the engagements of the ads cannot be read', async () => {
+    state.tables['social_posts'] = [post('instagram', 'P', '2026-10-04T08:00:00Z', 'Une semaine de l’espace')];
+    state.tables['social_ad_creative_daily'] = [{ ...creativeDay('instagram', 'X', '2026-10-06', 'P', 100, 10000), likes: 30, comments: 2, shares: 1 }];
+    state.tables['social_post_ad_daily'] = [nativeDay('instagram', 'X', 'P', '2026-10-06', 100, 10000)];
+    state.failOn = (table, ops) => table === 'social_ad_creative_daily' && ops.includes('in:post_id');
+    const r = await loadSocialData({ period, comparison });
+    expect(r.posts.find(p => p.post_id === 'P')?.sponsored).toEqual({ spend: 100, impressions: 10000 });
+  });
+
+  it('adds the engagements of a rule-linked ad to the pair of the post', async () => {
+    state.tables['social_posts'] = [post('instagram', 'ig-oct4', '2026-10-04T08:00:00Z', 'Une semaine de l’espace')];
+    state.tables['social_ad_creatives'] = [{ platform: 'instagram', ad_id: 'X', ad_name: '04102026_post1semainedelespace_IG', thumbnail_path: null }];
+    state.tables['social_ad_creative_daily'] = [{ ...creativeDay('instagram', 'X', '2026-10-06', 'dark_media', 30, 3000), likes: 20, comments: 1, shares: 1 }];
+    const r = await loadSocialData({ period, comparison });
+    expect(r.posts.find(p => p.post_id === 'ig-oct4')?.sponsored).toEqual({ spend: 30, impressions: 3000, engagement: { spend: 30, count: 22 } });
+  });
+
   it('keeps the native budget of an older post found by the rule, and lists it as a promoted post', async () => {
     state.tables['social_posts'] = [post('facebook', 'Q', '2026-08-20T08:00:00Z', 'Les hélicoptères', { thumbnail_path: 'facebook/Q.image' })];
     state.tables['social_ad_creatives'] = [{ platform: 'facebook', ad_id: 'X2', ad_name: '20082026_helicopteres_FB', thumbnail_path: null }];

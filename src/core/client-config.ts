@@ -88,8 +88,24 @@ export interface ClientInput {
     /** Sources que le tableau de bord n'a pas et que l'équipe complète à la main dans le modèle (« X », « un outil de veille »...). */
     manualSources?: string[];
   };
-  /** Textes de définition propres à l'historique du client (documentation) ; sinon le texte générique du noyau. */
-  kpiNotes?: { stories?: string; instagramInteractions?: string };
+  /** Textes de définition propres à l'historique du client (documentation) ; sinon le texte générique du noyau, sans mention d'export, d'agence ni de date. */
+  kpiNotes?: KpiNotes;
+}
+
+/** Textes de définition (kpi-definitions.ts) qui décrivent l'historique propre à un client. Tous facultatifs : absents, les définitions restent génériques. */
+export interface KpiNotes {
+  stories?: string;
+  instagramInteractions?: string;
+  /** Phrase ajoutée aux chiffres complétés par un historique manuel (impressions, interactions, vidéos, nouveaux abonnés). */
+  history?: string;
+  /** Source de repli de la valeur des abonnés, citée après l'instantané Windsor (par exemple « export de l’agence »). */
+  followersFallback?: string;
+  /** Phrase ajoutée aux « Nouveaux abonnés » LinkedIn (limite de l'historique). */
+  newFollowersLinkedin?: string;
+  /** Phrase sur l'origine du nombre de publications quand il peut venir d'un historique manuel ; défaut : les publications synchronisées. */
+  posts?: string;
+  /** Historique des interactions de stories, après « dans » (défaut : « l’historique importé »). */
+  storyHistory?: string;
 }
 
 /** Partie serveur : importée uniquement par du code serveur (*.server.ts). */
@@ -126,7 +142,7 @@ export interface Client {
     templateStorageKey: string;
     manualSources: string[];
   };
-  kpiNotes: { stories?: string; instagramInteractions?: string };
+  kpiNotes: KpiNotes;
 }
 export type ClientServer = ClientServerInput;
 

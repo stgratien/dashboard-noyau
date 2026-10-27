@@ -11,6 +11,23 @@ export type SocialDay = {
   metrics: Metrics;
   followers_estimated: boolean;
 };
+/**
+ * Diffusion sponsorisée d'une publication. `engagement` apparie le budget et les engagements des annonces (j'aime + commentaires + partages) des seules
+ * lignes de diffusion dont les engagements sont connus : le CPE n'est calculé que si ce budget couvre tout celui de la publication.
+ */
+export type Sponsored = { spend: number; impressions: number; engagement?: { spend: number; count: number } };
+/** Budget et engagements d'une ligne de diffusion ; rien quand l'un des trois engagements est inconnu (jamais compté comme zéro). */
+export function deliveryEngagement(row: { spend: number; likes: number | null; comments: number | null; shares: number | null }): Sponsored['engagement'] {
+  const count = nullableSum([row.likes, row.comments, row.shares]);
+  return count == null ? undefined : { spend: row.spend, count };
+}
+/** Additionne deux diffusions sponsorisées (le couple budget / engagements suit la même addition). */
+export function addSponsored(a: Sponsored | undefined, b: Sponsored): Sponsored {
+  const engagement = a?.engagement || b.engagement
+    ? { spend: (a?.engagement?.spend ?? 0) + (b.engagement?.spend ?? 0), count: (a?.engagement?.count ?? 0) + (b.engagement?.count ?? 0) }
+    : undefined;
+  return { spend: (a?.spend ?? 0) + b.spend, impressions: (a?.impressions ?? 0) + b.impressions, ...(engagement ? { engagement } : {}) };
+}
 export type SocialPost = {
   platform: string;
   post_id: string;
@@ -21,7 +38,7 @@ export type SocialPost = {
   thumbnail_path: string | null;
   metrics: Metrics;
   thumbnail_url?: string;
-  sponsored?: { spend: number; impressions: number };
+  sponsored?: Sponsored;
   /** Annonce rapprochée automatiquement de cette publication (date et titre du nom d'annonce). */
   adLink?: 'rule' | 'manual';
 };

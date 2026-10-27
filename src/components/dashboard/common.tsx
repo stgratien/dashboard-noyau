@@ -78,6 +78,9 @@ export function Kpi({
   const comparisonLabel = useContext(ComparisonLabel);
   const title = labelForValue(label, value);
   void tooltip; // Definitions stay in kpi-definitions.ts; nothing is shown on hover.
+  const unavailable = value.includes("non disponible") || value.includes("indisponible");
+  // « partiel » qualifie un chiffre affiché : à côté de « Donnée non disponible » il se contredit, la note disparaît (les autres notes restent).
+  const noteShown = unavailable ? note?.split(" · ").filter((n) => n !== "partiel").join(" · ") : note;
   const shift = pts ?? d;
   const good = shift === undefined ? true : inverse ? shift <= 0 : shift >= 0;
   const prevShown = prev === undefined || /disponible/.test(prev) ? "—" : prev;
@@ -105,7 +108,7 @@ export function Kpi({
         <p
           className={cn(
             "break-words font-medium",
-            value.includes("non disponible") || value.includes("indisponible")
+            unavailable
               ? "text-base text-muted-foreground"
               : "text-2xl",
             large && !value.includes("disponible") && "text-3xl",
@@ -125,7 +128,7 @@ export function Kpi({
           )}
         </p>
       )}
-      {note && <p className="mt-1 text-xs text-muted-foreground">{note}</p>}
+      {noteShown && <p className="mt-1 text-xs text-muted-foreground">{noteShown}</p>}
     </div>
   );
 }
