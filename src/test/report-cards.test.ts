@@ -1,6 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { NATIVE_CARD_NETWORKS, nativeCardPlacements } from '../lib/report-cards';
 import { buildReportTokens } from '../lib/report-tokens';
+
+// Configuration neutre : les cartes natives couvrent tous les réseaux, quels que soient ceux que le client du dépôt a connectés.
+vi.mock('@/client/config', async () => (await import('@/test/fixtures/neutral-client')).neutralClientModule());
 
 describe('native report cards', () => {
   it('lists one sub-line per card of the networks whose slide was rebuilt', () => {
