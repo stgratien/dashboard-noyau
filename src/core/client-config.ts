@@ -14,6 +14,9 @@ export type WindsorSource =
   | "linkedin"
   | "linkedin_organic";
 export type EventEdition = { name: string; start: IsoDate; end: IsoDate };
+/** Réseaux dont l'historique organique manuel peut passer avant les relevés du fournisseur (Instagram et TikTok ont leur propre logique : la cohorte de vidéos, les vues payantes de l'export). */
+export type ManualOrganicPlatform = "facebook" | "linkedin";
+export const MANUAL_ORGANIC_PLATFORMS: readonly ManualOrganicPlatform[] = ["facebook", "linkedin"];
 
 /** Réseaux affichables (vocabulaire fermé du noyau), dans l'ordre des onglets. */
 export type PlatformId = "facebook" | "instagram" | "linkedin" | "tiktok";
@@ -61,8 +64,13 @@ export interface ClientInput {
     /** Titre imprimé en tête des exports (défaut « Dashboard <name> »). */
     exportTitle?: string;
   };
-  /** Début de l'historique importé (AAAA-MM-JJ). */
-  data: { start: IsoDate };
+  /**
+   * `start` : début de l'historique importé (AAAA-MM-JJ).
+   * `manualOrganicFirst` (facebook, linkedin) : réseaux dont l'historique organique manuel (export de l'administration du compte, table social_organic_history) PASSE AVANT les relevés du fournisseur
+   * pour les jours qu'il couvre (défaut : aucun, les relevés du fournisseur passent avant et l'historique ne comble que leurs jours vides). À choisir quand l'export est plus complet
+   * que le connecteur (par exemple des statistiques que le fournisseur ne remonte qu'en partie).
+   */
+  data: { start: IsoDate; manualOrganicFirst?: ManualOrganicPlatform[] };
   /** Éditions ou temps forts du client (Édition 2023, 2025...) : raccourcis de période, comparaisons, rattrapage d'import. Défaut : aucune. */
   events?: { editions?: EventEdition[]; groupLabel?: string };
   /** Sources Windsor activées pour ce client (les identifiants de comptes sont dans la partie serveur). */
@@ -129,7 +137,7 @@ export interface Client {
     exportFileBase: string;
     exportTitle: string;
   };
-  data: { start: IsoDate };
+  data: { start: IsoDate; manualOrganicFirst: ManualOrganicPlatform[] };
   events: { editions: EventEdition[]; groupLabel: string };
   sources: WindsorSource[];
   networks: PlatformId[];
@@ -152,6 +160,7 @@ const ISO = /^\d{4}-\d{2}-\d{2}$/;
 export function defineClient(input: ClientInput): Client {
   if (!/^[a-z0-9-]+$/.test(input.id)) throw new Error(`Configuration client : id invalide « ${input.id} » (a-z, 0-9 et tirets).`);
   if (!ISO.test(input.data.start)) throw new Error("Configuration client : data.start doit être une date AAAA-MM-JJ.");
+  for (const platform of input.data.manualOrganicFirst ?? []) if (!MANUAL_ORGANIC_PLATFORMS.includes(platform)) throw new Error(`Configuration client : data.manualOrganicFirst n'accepte que facebook et linkedin (reçu « ${platform} »).`);
   const editions = input.events?.editions ?? [];
   for (const edition of editions) {
     if (!ISO.test(edition.start) || !ISO.test(edition.end) || edition.start > edition.end)
@@ -188,7 +197,7 @@ export function defineClient(input: ClientInput): Client {
       exportFileBase: b.exportFileBase ?? `Dashboard-${b.name.trim().replace(/\s+/g, "-")}`,
       exportTitle: b.exportTitle ?? `Dashboard ${b.name}`,
     },
-    data: input.data,
+    data: { start: input.data.start, manualOrganicFirst: [...new Set(input.data.manualOrganicFirst ?? [])] },
     events: { editions, groupLabel: input.events?.groupLabel ?? "Éditions" },
     sources: input.sources,
     networks: ALL_PLATFORMS.filter((p) => networks.includes(p)),

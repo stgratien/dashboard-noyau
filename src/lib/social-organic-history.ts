@@ -6,8 +6,12 @@ export const ORGANIC_ZERO_RUN_DAYS = 7;
 const sources: Record<string, string> = { instagram: 'instagram', facebook: 'facebook_organic', linkedin: 'linkedin_organic' };
 const accountFields = ['impressions', 'videoViews', 'likes', 'comments', 'shares'];
 
-/** Normalize provider account zero runs before merging trusted agency exports. TikTok uses video cohorts. */
-export function mergeOrganicHistory(days: SocialDay[], manual: ManualOrganicDay[]): SocialDay[] {
+/**
+ * Normalize provider account zero runs before merging trusted agency exports. TikTok uses video cohorts.
+ * `manualFirst` (client.data.manualOrganicFirst, facebook and linkedin only): the manual history of those networks comes BEFORE the provider values for the days it covers;
+ * by default it only fills the empty days. A blank manual field never replaces a provider value.
+ */
+export function mergeOrganicHistory(days: SocialDay[], manual: ManualOrganicDay[], manualFirst: readonly string[] = []): SocialDay[] {
   const result = days.map(d => ({ ...d, metrics: { ...d.metrics } }));
   for (const [platform, source] of Object.entries(sources)) {
     const rows = result.filter(d => d.platform === platform && d.source === source).sort((a,b) => a.day.localeCompare(b.day));
@@ -40,7 +44,8 @@ export function mergeOrganicHistory(days: SocialDay[], manual: ManualOrganicDay[
     if (instagram && igTotal != null && (row.metrics['impressions'] == null || (row.metrics['impressions'] ?? 0) <= 0)) row.metrics['instagramManualFill'] = 1;
     // Instagram videoViews come from the published-video cohort: the agency export has one views column for all formats.
     const fields = { impressions: instagram ? igTotal : record.organic_impressions ?? null, videoViews: instagram ? null : record.organic_video_views ?? null, likes: record.organic_likes, comments: record.organic_comments, shares: record.organic_shares };
-    for (const [field, value] of Object.entries(fields)) if (value != null && (row.metrics[field] == null || (row.metrics[field] ?? 0) <= 0)) row.metrics[field] = value;
+    const first = manualFirst.includes(record.platform);
+    for (const [field, value] of Object.entries(fields)) if (value != null && (first || row.metrics[field] == null || (row.metrics[field] ?? 0) <= 0)) row.metrics[field] = value;
     if (record.posts_published != null) { row.metrics['manualPostsPublished'] = record.posts_published; row.metrics['postsAvailable'] = 1; }
     // Explicit manual zero values are known values, not provider-retention sentinels.
     row.metrics['manualOrganicHistory'] = 1;

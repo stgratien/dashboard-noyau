@@ -14,9 +14,18 @@ describe("client configuration", () => {
     expect(c.networks).toEqual(["instagram"]);
     expect(c.features).toEqual({ googleAds: true, youtube: true, global: false });
     expect(c.events).toEqual({ editions: [], groupLabel: "Éditions" });
+    expect(c.data).toEqual({ start: "2024-01-01", manualOrganicFirst: [] });
     expect(c.report.google).toBeNull();
     expect(c.brand.footerCredit).toBeNull();
     expect(c.brand.headline).toBe("Dashboard de performances social media et web");
+  });
+
+  it("lets a client choose the networks whose manual organic history comes before the provider data, and rejects an unknown network", () => {
+    expect(defineClient({ ...clientV1, data: { ...clientV1.data, manualOrganicFirst: ["linkedin", "linkedin"] } }).data.manualOrganicFirst).toEqual(["linkedin"]);
+    expect(() => defineClient({ ...clientV1, data: { ...clientV1.data, manualOrganicFirst: ["x" as "linkedin"] } })).toThrow(/manualOrganicFirst/);
+    // Instagram and TikTok have their own logic (video cohort, paid views of the export): the choice does not apply to them.
+    expect(() => defineClient({ ...clientV1, data: { ...clientV1.data, manualOrganicFirst: ["instagram" as "linkedin"] } })).toThrow(/facebook et linkedin/);
+    expect(() => defineClient({ ...clientV1, data: { ...clientV1.data, manualOrganicFirst: ["tiktok" as "linkedin"] } })).toThrow(/facebook et linkedin/);
   });
 
   it("derives the network tabs from the enabled sources, Meta Ads feeding Facebook and Instagram", () => {

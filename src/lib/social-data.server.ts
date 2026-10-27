@@ -307,5 +307,5 @@ async function computeSocialData(data: { period: PeriodInput; comparison: Period
     const status = await db.from('social_sync_status').select('source,state,last_success_at');
     if (status.error) throw new Error('État des sources indisponible');
     const statGaps = await statGapsRead;
-    return { days:mergeFollowerHistory(mergeOrganicHistory(days,organicHistory),manual), posts, promotedPosts: promoted, paidAds, adLinking, ads, adCoverage, stories, storyPulls, storiesFailed, unusableStatMonths: statGaps.months, statGapsFailed: statGaps.failed, audience: audience.data, statuses: status.data };
+    return { days:mergeFollowerHistory(mergeOrganicHistory(days,organicHistory,client.data.manualOrganicFirst),manual), posts, promotedPosts: promoted, paidAds, adLinking, ads, adCoverage, stories, storyPulls, storiesFailed, unusableStatMonths: statGaps.months, statGapsFailed: statGaps.failed, audience: audience.data, statuses: status.data };
 }

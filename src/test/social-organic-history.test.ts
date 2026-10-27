@@ -14,6 +14,22 @@ describe('manual organic history',()=>{
   expect(merged[0]?.metrics).toMatchObject({impressions:50,videoViews:0,likes:20,comments:2,shares:0});
   expect(days[0]?.metrics['likes']).toBe(-2);
  });
+ it('lets the manual history of the chosen networks come before positive provider values, for the days it covers only',()=>{
+  const days=rows('linkedin','linkedin_organic',100);
+  const manual:ManualOrganicDay[]=[{platform:'linkedin',day:period.start,organic_views:null,organic_impressions:250,organic_likes:7,organic_comments:null,organic_shares:0,posts_published:1}];
+  // By default the provider comes first: a positive provider value stays, the history only fills what is empty.
+  expect(mergeOrganicHistory(days,manual)[0]?.metrics).toMatchObject({impressions:100,likes:7});
+  const first=mergeOrganicHistory(days,manual,['linkedin']);
+  expect(first[0]?.metrics).toMatchObject({impressions:250,likes:7,shares:0,manualOrganicHistory:1,manualPostsPublished:1});
+  // A blank manual field never replaces a provider value, and a day the history does not cover keeps the provider data.
+  expect(first[0]?.metrics['comments']).toBe(0);
+  expect(first[1]?.metrics['impressions']).toBe(100);
+  // An explicit manual zero is a known value: it replaces a positive provider value too.
+  expect(mergeOrganicHistory(days,[{...manual[0]!,organic_impressions:0}],['linkedin'])[0]?.metrics['impressions']).toBe(0);
+  // Other networks are not concerned by the choice of linkedin.
+  const facebook=mergeOrganicHistory(rows('facebook','facebook_organic',100),[{...manual[0]!,platform:'facebook'}],['linkedin']);
+  expect(facebook[0]?.metrics['impressions']).toBe(100);
+ });
  it('keeps manual zeroes known and blank manual fields unavailable',()=>{
   const manual:ManualOrganicDay={platform:'facebook',day:period.start,organic_views:null,organic_impressions:0,organic_likes:null,organic_comments:0,organic_shares:0,posts_published:0};
   const merged=mergeOrganicHistory([], [manual]);expect(merged[0]?.metrics['impressions']).toBe(0);expect(merged[0]?.metrics['likes']).toBeUndefined();
