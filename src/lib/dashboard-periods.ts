@@ -40,6 +40,11 @@ export function previousEdition(period: Period) {
 /** Éditions proposées en raccourci de comparaison : les éditions déjà terminées, sauf celle qui est la période affichée (se comparer à soi-même n'a pas de sens). */
 export const comparisonEditions = (period: Period, today = todayISO()) =>
   EDITIONS.filter((edition) => edition.end < today && !(edition.start === period.start && edition.end === period.end));
+/** « Même période il y a 2 ans » n'a de sens que si la période décalée finit avant la période affichée (« Toute la période » ou trois ans de données se chevaucheraient). */
+export const twoYearsAvailable = (period: Period) => comparisonFor(period, "two-years").period.end < period.start;
+/** Valeur de la liste « Comparaison » pour le mode courant : « Même période il y a 2 ans », un raccourci d'édition (période nommée), la période personnalisée ou, sinon, la période précédente. */
+export const comparisonChoice = (mode: ComparisonMode, edition?: string) =>
+  mode === "two-years" ? "two-years" : mode !== "custom" ? "previous" : edition ? `edition:${edition}` : "custom";
 /** `custom` : la période choisie à la main (« Période personnalisée ») ou un raccourci d'édition (elle porte alors son nom : « vs Édition 2023 ») ; sans dates, on retombe sur la période précédente. */
 export function comparisonFor(period: Period, mode: ComparisonMode, custom?: Period) {
   if (mode === "custom" && custom)

@@ -12,7 +12,7 @@ import { PLATFORMS, type PlatformId } from "@/lib/dashboard-data";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { DashboardPeriodSelector } from "@/components/dashboard-period-selector";
-import { comparisonFor, comparisonInSentence, lastDays, yesterdayISO, formatPeriod, type Period, type ComparisonMode } from "@/lib/dashboard-periods";
+import { comparisonFor, comparisonInSentence, lastDays, twoYearsAvailable, yesterdayISO, formatPeriod, type Period, type ComparisonMode } from "@/lib/dashboard-periods";
 import { readGoogleAds } from "@/lib/google-ads.functions";
 import { readYoutube } from "@/lib/youtube.functions";
 import { ComparisonLabel, PeriodLine, budget, type Tab } from "@/components/dashboard/common";
@@ -270,6 +270,8 @@ function Dashboard() {
     setPeriod(next);
     // Une édition choisie en comparaison ne peut pas être comparée à elle-même : si la période affichée devient cette édition, retour à la période précédente.
     if (mode === "custom" && customComparison?.name && customComparison.start === next.start && customComparison.end === next.end) setMode("previous");
+    // Même chose pour « Même période il y a 2 ans » : sur une période de plus de deux ans, la période décalée chevaucherait la période affichée.
+    if (mode === "two-years" && !twoYearsAvailable(next)) setMode("previous");
   };
 
   const tabs = [...(client.features.global ? ["overview"] : []), ...PLATFORMS.map((p) => p.id),...(youtube.data?.lastSuccess ? ["youtube"] : []), ...(client.features.googleAds ? ["google"] : [])] as Tab[];

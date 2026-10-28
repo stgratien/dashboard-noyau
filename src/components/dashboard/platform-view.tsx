@@ -1,4 +1,4 @@
-import { Fragment, useContext, useMemo, useState } from "react";
+import { useContext, useMemo, useState } from "react";
 import { realBlendedTotals, type SocialPost } from "@/lib/social-totals";
 import { formatPercent, videosNote } from "@/lib/dashboard-format";
 import { CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, LineChart, Line } from "recharts";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { yesterdayISO, type Period } from "@/lib/dashboard-periods";
 import { AUDIENCE_VIEW_LABELS, audienceDefaultView, audienceSeries, audienceViews, type AudienceView } from "@/lib/social-followers";
 import { storiesTotals, storyDelta, storyNote } from "@/lib/social-stories";
+import { comparisonGapNote } from "@/lib/comparison-note";
 import { definition, type KpiKey } from "@/lib/kpi-definitions";
 import { postStats, topPosts, flopPosts, formatOptions, sortRows, pageWindow, audienceBreakdowns, audiencePanels, formatLabel, paidAdStats, TABLE_PAGE_SIZE, type SortKey, type PostStats, type PostType } from "@/lib/top-posts";
 import { BRAND_COLORS, BigSection, MissingVisual, Kpi, NAV_SCROLL, Panel, ReportRowLimit, navProps, navSlug, reportAttr, SectionTitle, type SocialData, type ViewPeriods, axis, axisNumber, budget, comparableDelta, coverageDetails, delta, eur, fmt, followerNote, nf, pct, shown, tip } from "@/components/dashboard/common";
@@ -218,9 +219,16 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
     so = storiesTotals(data.stories, data.storyPulls, comparison, { failed: data.storiesFailed });
   const best = topPosts(inPeriodPosts, promotedPosts);
   const flops = flopPosts(inPeriodPosts);
+  // Période comparée sans chiffres organiques : une phrase dit pourquoi les cartes affichent « vs — » (jamais dans les exports ni le rapport).
+  const gapNote = comparisonGapNote(p, data.days, t, o, comparison);
 
   return (
     <div className="space-y-8">
+      {gapNote && (
+        <p data-export-hide role="note" className="text-sm text-muted-foreground">
+          {gapNote}
+        </p>
+      )}
       <BigSection title="Activité" four={!tk}>
         <Kpi tooltip={D("followers")} note={followerNote(t)} label="Abonnés" value={shown(t, fmt(t.followers))} />
         <Kpi
@@ -730,39 +738,43 @@ export function TopPostCard({
           {emptyNote ?? (kind === "cpm" ? "Aucune publication du compte avec au moins 5 € de budget sur la période" : "Donnée non disponible")}
         </p>
       ) : (
-        <div className="flex gap-3">
-          <PostLink href={post.permalink} label={`Voir ${post.title}`} className="shrink-0">
+        // Le visuel en grand sur toute la largeur, le titre puis les chiffres dessous (la carte, d'environ 396 px de haut pour 438 de large dans le rapport, garde le rapport de son emplacement, 266 × 241 pt).
+        <div className="space-y-2 text-sm">
+          <PostLink href={post.permalink} label={`Voir ${post.title}`} className="block">
             {post.thumbnail_url ? (
               <img
                 src={post.thumbnail_url}
                 alt={post.title}
                 loading={forReport ? "eager" : "lazy"}
-                className={cn("w-24 rounded-md object-cover", post.vertical ? "h-36" : "h-24")}
+                // Le visuel reste entier (un texte sur image n'est jamais rogné), sur fond neutre quand son format ne remplit pas la largeur.
+                className="h-52 w-full rounded-md bg-muted object-contain"
               />
             ) : (
-              <MissingVisual format={post.format} className="h-24 w-24" />
+              <MissingVisual format={post.format} className="h-52 w-full" />
             )}
           </PostLink>
-          <div className="min-w-0 flex-1 space-y-1 text-sm">
+          <div className="min-w-0">
             <PostLink
               href={post.permalink}
-              className="line-clamp-2 font-medium"
+              className="line-clamp-1 font-medium"
               linkClassName="hover:text-primary hover:underline"
+              title={post.title}
             >
               {post.title}
             </PostLink>
             <p className="text-xs text-muted-foreground">
               {post.date} · {post.format}
             </p>
-            <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
-              {topPostFigures(post, kind).map((f) => (
-                <Fragment key={f.key}>
-                  <dt className="text-muted-foreground">{f.label}</dt>
-                  <dd className="text-right font-medium">{f.value}</dd>
-                </Fragment>
-              ))}
-            </dl>
           </div>
+          <dl className="grid grid-cols-3 gap-x-3 gap-y-1.5">
+            {topPostFigures(post, kind).map((f) => (
+              // Le libellé (dt) précède sa valeur (dd) dans le code ; l'ordre visuel est inversé.
+              <div key={f.key} className="flex min-w-0 flex-col-reverse">
+                <dt className="text-[11px] leading-tight text-muted-foreground">{f.label}</dt>
+                <dd className="text-sm font-medium">{f.value}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
       )}
     </div>

@@ -7,7 +7,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { allTimeShortcut, calendarDate, calendarISO, comparisonEditions, formatPeriod, periodShortcutGroups, type Period, type ComparisonMode } from "@/lib/dashboard-periods";
+import { allTimeShortcut, calendarDate, calendarISO, comparisonChoice, comparisonEditions, formatPeriod, periodShortcutGroups, twoYearsAvailable, type Period, type ComparisonMode } from "@/lib/dashboard-periods";
 
 /** Dates de début et de fin, calendrier, Annuler / Appliquer : commun à la période et à la comparaison personnalisée (démonté à la fermeture, il repart de `value`). */
 function RangePanel({ value, onApply, onCancel }: { value: Period; onApply: (period: Period) => void; onCancel: () => void }) {
@@ -94,10 +94,11 @@ export function DashboardPeriodSelector({ period, comparison, mode, onPeriodChan
       </PopoverContent>
     </Popover>
     <Popover open={customOpen} onOpenChange={setCustomOpen}>
-      <Select value={mode !== "custom" ? "previous" : editionValue ? `edition:${editionValue}` : "custom"}
+      <Select value={comparisonChoice(mode, editionValue)}
         onValueChange={(value) => {
           const edition = editions.find((item) => `edition:${item.name}` === value);
           if (value === "custom") askCustom.current = true;
+          else if (value === "two-years") onModeChange("two-years");
           else if (edition) onCustomComparison(edition);
           else onModeChange("previous");
         }}>
@@ -106,6 +107,7 @@ export function DashboardPeriodSelector({ period, comparison, mode, onPeriodChan
         </PopoverAnchor>
         <SelectContent onCloseAutoFocus={(event) => { if (askCustom.current) { event.preventDefault(); askCustom.current = false; setCustomOpen(true); } }}>
           <SelectItem value="previous">Période précédente</SelectItem>
+          {twoYearsAvailable(period) && <SelectItem value="two-years">Il y a 2 ans</SelectItem>}
           {editions.map((edition) => <SelectItem key={edition.name} value={`edition:${edition.name}`}>{edition.name}</SelectItem>)}
           {/* Choisie alors qu'elle est déjà active, la liste ne signale aucun changement : les gestes de sélection rouvrent le sélecteur de dates pour la modifier. */}
           <SelectItem value="custom" onPointerUp={() => { askCustom.current = true; }} onClick={() => { askCustom.current = true; }}

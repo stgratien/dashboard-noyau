@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { PLATFORMS, getSeries, getPosts, blendedTotals, allNetworkTotals, followersAt } from "../lib/dashboard-data";
-import { allTimeShortcut, DATA_START, lastDays, previousPeriod, previousEdition, periodDays, periodShortcuts, periodShortcutGroups, comparisonFor, comparisonEditions, EDITIONS, todayISO, yesterdayISO } from "../lib/dashboard-periods";
+import { allTimeShortcut, DATA_START, lastDays, previousPeriod, previousEdition, periodDays, periodShortcuts, periodShortcutGroups, comparisonFor, comparisonChoice, twoYearsAvailable, comparisonEditions, EDITIONS, todayISO, yesterdayISO } from "../lib/dashboard-periods";
 
 // Configuration neutre : les éditions et le début des données ne viennent pas du client de ce dépôt (les faits propres au client se testent dans le dossier src/client/tests de son dépôt).
 vi.mock("@/client/config", async () => (await import("@/test/fixtures/neutral-client")).neutralClientModule());
@@ -129,6 +129,25 @@ describe("dashboard periods", () => {
     expect(twoYears.period).toEqual({ start: "2024-10-01", end: "2024-10-17" });
     expect(twoYears.description).toBe("T4 2024 (mêmes jours)");
     expect(comparisonFor(full, "two-years").description).toBe("T3 2024");
+  });
+  it("offers the same period two years earlier from the comparison list, whatever the period shown", () => {
+    const full = periodShortcuts("2026-10-18").find((p) => p.name === "T3 2026");
+    if (!full) throw new Error("Missing T3 2026");
+    expect(comparisonFor(full, "two-years")).toMatchObject({ period: { start: "2024-07-01", end: "2024-09-30" }, label: "vs T3 2024" });
+    // A free range keeps its days: the label cannot name a quarter.
+    expect(comparisonFor({ start: "2026-02-10", end: "2026-03-20" }, "two-years")).toMatchObject({ period: { start: "2024-02-10", end: "2024-03-20" }, label: "vs même période 2024" });
+    expect(comparisonChoice("two-years")).toBe("two-years");
+    expect(comparisonChoice("previous")).toBe("previous");
+    expect(comparisonChoice("custom")).toBe("custom");
+    expect(comparisonChoice("custom", "Edition 2023")).toBe("edition:Edition 2023");
+  });
+  it("offers the two-years comparison only when the shifted period ends before the displayed one", () => {
+    expect(twoYearsAvailable({ start: "2026-07-01", end: "2026-09-30" })).toBe(true);
+    expect(twoYearsAvailable({ start: "2024-10-01", end: "2026-10-27" })).toBe(false);
+    // The shifted end must precede the start: a period just under two years long still qualifies, one just over does not.
+    expect(twoYearsAvailable({ start: "2024-10-28", end: "2026-10-27" })).toBe(true);
+    expect(twoYearsAvailable({ start: "2024-10-27", end: "2026-10-27" })).toBe(false);
+    expect(twoYearsAvailable(allTimeShortcut("2026-10-28"))).toBe(false);
   });
   it("lists every full year since 2023, so 2026 appears in 2027", () => {
     const names = (today: string) => periodShortcutGroups(today).find((g) => g.name === "Années")?.items.map((p) => p.name);
