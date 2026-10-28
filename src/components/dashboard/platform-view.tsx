@@ -13,7 +13,7 @@ import { storiesTotals, storyDelta, storyNote } from "@/lib/social-stories";
 import { comparisonGapNote } from "@/lib/comparison-note";
 import { definition, type KpiKey } from "@/lib/kpi-definitions";
 import { postStats, topPosts, flopPosts, formatOptions, sortRows, pageWindow, audienceBreakdowns, audiencePanels, formatLabel, paidAdStats, TABLE_PAGE_SIZE, type SortKey, type PostStats, type PostType } from "@/lib/top-posts";
-import { BRAND_COLORS, BigSection, MissingVisual, Kpi, NAV_SCROLL, Panel, ReportRowLimit, navProps, navSlug, reportAttr, SectionTitle, type SocialData, type ViewPeriods, axis, axisNumber, budget, comparableDelta, coverageDetails, delta, eur, fmt, followerNote, nf, pct, shown, tip } from "@/components/dashboard/common";
+import { BRAND_COLORS, BigSection, MissingVisual, Kpi, NAV_SCROLL, Panel, ReportRowLimit, navProps, navSlug, reportAttr, SectionTitle, type SocialData, type ViewPeriods, axis, axisNumber, budget, comparableDelta, comparablePoints, coverageDetails, prevShown, delta, eur, fmt, followerNote, nf, pct, shown, tip } from "@/components/dashboard/common";
 
 export function InteractionLabel({
   x,
@@ -258,7 +258,7 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
         <Kpi
           tooltip={D("posts")}
           label={tk ? "Vidéos publiées" : "Publications"}
-          prev={shown(o, nf.format(o.posts))}
+          prev={prevShown(t, o, "posts", nf.format(o.posts))}
           value={shown(t, nf.format(t.posts))}
           d={delta(t.posts, o.posts)}
         />
@@ -266,7 +266,7 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
           <Kpi
             tooltip={D("videosPublished")}
             label="Vidéos publiées"
-            prev={shown(o, fmt(o.videos))}
+            prev={prevShown(t, o, "videos", fmt(o.videos))}
             value={shown(t, fmt(t.videos))}
             d={delta(t.videos, o.videos)}
           />
@@ -277,14 +277,14 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
           {...coverageDetails(t, "impressions", D("impressions"))}
           note={cohortNote("impressions")}
           label="Impressions totales"
-          prev={shown(o, fmt(o.impressions))}
+          prev={prevShown(t, o, "impressions", fmt(o.impressions))}
           value={shown(t, fmt(t.impressions))}
           d={cohortDelta("impressions")}
         />
         <Kpi
           {...coverageDetails(t, "impressionsPerPost", D("impressionsPerPost"))}
           label="Impressions moy. / post"
-          prev={shown(o, fmt(o.impressionsPerPost))}
+          prev={prevShown(t, o, "impressionsPerPost", fmt(o.impressionsPerPost))}
           value={shown(t, fmt(t.impressionsPerPost))}
           d={cohortDelta("impressionsPerPost")}
         />
@@ -297,7 +297,7 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
             .filter(Boolean)
             .join(" · ")}
           label="Vues de vidéo"
-          prev={shown(o, fmt(o.videoViews))}
+          prev={prevShown(t, o, "videoViews", fmt(o.videoViews))}
           value={shown(t, fmt(t.videoViews))}
           d={t.videos === 0 && t.videoViews === 0 ? undefined : comparableDelta(t, o, "videoViews")}
         />
@@ -307,31 +307,36 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
           {...coverageDetails(t, "interactions", D("interactions"))}
           note={cohortNote("interactions")}
           label="Interactions totales"
-          prev={shown(o, fmt(o.interactions))}
+          prev={prevShown(t, o, "interactions", fmt(o.interactions))}
           value={shown(t, fmt(t.interactions))}
           d={cohortDelta("interactions")}
         />
         <Kpi
           {...coverageDetails(t, "engagementRate", D("engagementRate"))}
           label="Taux d'engagement (sur impressions)"
-          prev={shown(o, pct(o.engagementRate))}
-          pts={t.engagementRate != null && o.engagementRate != null && !noTikTokVideo ? t.engagementRate - o.engagementRate : undefined}
+          prev={prevShown(t, o, "engagementRate", pct(o.engagementRate))}
+          pts={noTikTokVideo ? undefined : comparablePoints(t, o, "engagementRate")}
           value={shown(t, pct(t.engagementRate))}
           d={cohortDelta("engagementRate")}
         />
         <Kpi
-          tooltip={D("clicks")}
+          {...coverageDetails(t, "clicks", D("clicks"))}
           note={
-            p === "linkedin"
-              ? "Publicité uniquement : LinkedIn ne distingue pas les clics sur liens en organique."
-              : p === "instagram"
-                ? "Publicité uniquement."
-                : undefined
+            [
+              coverageDetails(t, "clicks").note,
+              p === "linkedin"
+                ? "Publicité uniquement : LinkedIn ne distingue pas les clics sur liens en organique."
+                : p === "instagram"
+                  ? "Publicité uniquement."
+                  : undefined,
+            ]
+              .filter(Boolean)
+              .join(" · ") || undefined
           }
           label="Clics sur les liens"
-          prev={shown(o, fmt(o.clicks))}
+          prev={prevShown(t, o, "clicks", fmt(o.clicks))}
           value={shown(t, fmt(t.clicks))}
-          d={delta(t.clicks, o.clicks)}
+          d={comparableDelta(t, o, "clicks")}
         />
       </BigSection>
       {p === "instagram" && (
@@ -374,13 +379,13 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
         <Kpi
           tooltip={D("spend")}
           label="Budget dépensé"
-          prev={shown(o, budget(o.spend))}
+          prev={prevShown(t, o, "spend", budget(o.spend))}
           value={shown(t, budget(t.spend))}
           d={delta(t.spend, o.spend)}
         />
         <Kpi
           label="Annonces diffusées"
-          prev={shown(o, fmt(o.adsDelivered))}
+          prev={prevShown(t, o, "adsDelivered", fmt(o.adsDelivered))}
           value={shown(t, fmt(t.adsDelivered))}
           d={delta(t.adsDelivered, o.adsDelivered)}
           tooltip={D("adsDelivered")}
@@ -390,7 +395,7 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
         <Kpi
           tooltip={D("cpm")}
           label="CPM"
-          prev={shown(o, eur(o.cpm, 2))}
+          prev={prevShown(t, o, "cpm", eur(o.cpm, 2))}
           value={shown(t, eur(t.cpm, 2))}
           d={delta(t.cpm, o.cpm)}
           inverse
@@ -398,7 +403,7 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
         <Kpi
           tooltip={D("cpc")}
           label="CPC"
-          prev={shown(o, eur(o.cpc, 2))}
+          prev={prevShown(t, o, "cpc", eur(o.cpc, 2))}
           value={shown(t, eur(t.cpc, 2))}
           d={delta(t.cpc, o.cpc)}
           inverse
@@ -406,7 +411,7 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
         {tk ? (
           <Kpi
             label="CPV (coût par vue)"
-            prev={shown(o, eur(o.cpv, 2))}
+            prev={prevShown(t, o, "cpv", eur(o.cpv, 2))}
             value={shown(t, eur(t.cpv, 2))}
             d={delta(t.cpv, o.cpv)}
             inverse
@@ -416,7 +421,7 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
           <Kpi
             {...coverageDetails(t, "cpe", D("cpe"))}
             label="CPE (coût par engagement)"
-            prev={shown(o, eur(o.cpe, 2))}
+            prev={prevShown(t, o, "cpe", eur(o.cpe, 2))}
             value={shown(t, eur(t.cpe, 2))}
             d={comparableDelta(t, o, "cpe")}
             inverse

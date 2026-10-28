@@ -11,7 +11,7 @@ describe('definitions without client notes', () => {
   it('stay generic: no agency, no history export, no year', () => {
     for (const key of KEYS) for (const p of PLATFORMS) {
       const text = definition(key, p);
-      expect(text, `${key} / ${p}`).not.toMatch(/agence|Business Suite|\b20\d{2}\b/);
+      expect(text, `${key} / ${p}`).not.toMatch(/agence|export de|export importé|exports? natifs?|Business Suite|\b20\d{2}\b/);
       expect(text, `${key} / ${p}`).not.toMatch(/ {2}|^ | $/);
     }
   });

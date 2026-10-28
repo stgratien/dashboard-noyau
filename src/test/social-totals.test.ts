@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { realBlendedTotals, realAllNetworkTotals, type SocialDay, type SocialPost } from '../lib/social-totals';
+import { comparablePoints, coverageDetails, prevShown } from '../components/dashboard/common';
+import { mergeOrganicHistory, type ManualOrganicDay } from '../lib/social-organic-history';
 import { dayNumber, isoFromDay, yesterdayISO } from '../lib/dashboard-periods';
 import { PLATFORMS } from '../lib/dashboard-data';
 import { formatNumber, formatEuro } from '../lib/dashboard-format';
@@ -21,7 +23,8 @@ describe('real Windsor aggregates', () => {
     const global = realAllNetworkTotals(totals);
     for (const key of ['followers', 'posts', 'impressions', 'videoViews', 'interactions', 'spend'] as const) expect(global[key]).toBe(totals.reduce((a, t) => a + (t[key] ?? 0), 0));
     expect(global.impressionsPerPost).toBe((global.impressions ?? 0) / (global.posts ?? 1));
-    expect(totals[0]?.interactions).toBe(30);
+    // Facebook : les totaux des publications comprennent déjà les réactions des annonces, elles ne sont pas ajoutées (15 = 10 + 2 + 3 de la publication).
+    expect(totals[0]?.interactions).toBe(15);
     expect(totals[0]?.cpm).toBe(10);
     expect(totals[0]?.cpc).toBe(4);
   });
@@ -52,13 +55,18 @@ describe('real Windsor aggregates', () => {
   });
   it('divides the budget by the total interactions (organic + paid) for the CPE, on every network and in Global', () => {
     const facebook = realBlendedTotals('facebook', days, posts, period, []);
-    expect(facebook.interactions).toBe(30);
-    expect(facebook.cpe).toBe(20 / 30);
+    expect(facebook.interactions).toBe(15);
+    expect(facebook.cpe).toBe(20 / 15);
     const global = realAllNetworkTotals(PLATFORMS.map(({ id }) => realBlendedTotals(id, days, posts, period, [])));
     expect(global.cpe).toBe((global.spend ?? 0) / (global.interactions ?? 1));
-    // Without the organic source the interactions are partial, and so is the CPE.
+    // Without the organic source the Facebook interactions are unavailable (the paid actions alone never stand for the total), and so is the CPE.
     const noOrganic = realBlendedTotals('facebook', days.filter(d => d.source !== 'facebook_organic'), posts, period, []);
+    expect(noOrganic.interactions).toBeNull();
+    expect(noOrganic.cpe).toBeNull();
     expect(noOrganic.missing['cpe']).toEqual(['facebook:organic']);
+    // La diffusion payante d'Instagram (compte) et de LinkedIn reste traitée comme avant : LinkedIn additionne ses annonces.
+    const linkedin = realBlendedTotals('linkedin', days, posts, period, []);
+    expect(linkedin.interactions).toBe(30);
   });
   it('has no CPE without a budget, never 0,00 €', () => {
     const noBudget = days.map(d => ({ ...d, metrics: { ...d.metrics, spend: 0 } }));
@@ -177,6 +185,121 @@ describe('real Windsor aggregates', () => {
     expect(realAllNetworkTotals(all).missing['cpe']).not.toContain('tiktok');
     expect(realAllNetworkTotals(all).cpe).toBeCloseTo(all.reduce((a, t) => a + (t.spend ?? 0), 0) / all.reduce((a, t) => a + (t.interactions ?? 0), 0), 9);
   });
+  it('Facebook: reactions, comments and shares of the posts already include the ads\' ones; impressions and video views still add the paid delivery', () => {
+    const period = { start: '2025-07-01', end: '2025-07-03' };
+    const post = (id: string, day: string, likes: number | null) => ({ platform: 'facebook', post_id: id, published_at: `${day}T10:00:00Z`, title: id, format: 'Photo', permalink: '', thumbnail_path: null, metrics: { impressions: 900, likes, comments: 4, shares: 6 } });
+    const posts: SocialPost[] = [post('a', '2025-07-01', 100), post('b', '2025-07-02', 50)];
+    const days: SocialDay[] = [];
+    for (const day of ['2025-07-01', '2025-07-02', '2025-07-03']) {
+      // Organique : réactions des publications du jour (à vie), impressions et vues de vidéo organiques du compte ; payant : actions Meta Ads, impressions, vues de vidéo, clics.
+      days.push({ platform: 'facebook', source: 'facebook_organic', day, followers_estimated: false, metrics: { postsAvailable: 1, impressions: 1000, videoViews: 200, likes: day === '2025-07-03' ? 0 : 75, comments: 2, shares: 3, linkClicks: 10 } });
+      days.push({ platform: 'facebook', source: 'facebook', day, followers_estimated: false, metrics: { spend: 30, impressions: 5000, videoViews: 800, likes: 40, comments: 5, shares: 7, linkClicks: 20 } });
+    }
+    const t = realBlendedTotals('facebook', days, posts, period, []);
+    // Interactions : l'organique seul (publications, annonces comprises), jamais les actions Meta Ads en plus.
+    expect(t.interactions).toBe(3 * (2 + 3) + 150);
+    expect(t.interactionBreakdown.map(b => b.v)).toEqual([150, 6, 9]);
+    // Impressions et vues de vidéo : l'organique du compte exclut le payant, qui s'y ajoute.
+    expect(t.impressions).toBe(3 * (1000 + 5000));
+    expect(t.videoViews).toBe(3 * (200 + 800));
+    expect(t.cpe).toBeCloseTo(90 / t.interactions!, 9);
+    expect(t.cpm).toBeCloseTo((90 / 15_000) * 1000, 9);
+    // Clics : organique + payant, avec leur couverture sous la clé « clicks » lue par Global et les cartes.
+    expect(t.clicks).toBe(3 * (10 + 20));
+    expect(t.missing['clicks']).toEqual([]);
+    const noOrganic = realBlendedTotals('facebook', days.filter(d => d.source !== 'facebook_organic'), posts, period, []);
+    expect(noOrganic.missing['clicks']).toEqual(['facebook:organic']);
+    expect(realAllNetworkTotals([noOrganic]).missing['clicks']).toEqual(['facebook:organic']);
+  });
+  describe('Facebook with the export first: the ads\' actions are added on the days read from the export only', () => {
+    const period = { start: '2025-07-01', end: '2025-07-04' };
+    const providerDay = (day: string, extra: Record<string, number> = {}): SocialDay => ({ platform: 'facebook', source: 'facebook_organic', day, followers_estimated: false, metrics: { postsAvailable: 1, impressions: 1000, videoViews: 100, likes: 80, comments: 8, shares: 4, ...extra } });
+    const paidDay = (day: string): SocialDay => ({ platform: 'facebook', source: 'facebook', day, followers_estimated: false, metrics: { spend: 10, impressions: 4000, videoViews: 300, likes: 40, comments: 5, shares: 7, linkClicks: 3 } });
+    const exportDay = (day: string): ManualOrganicDay => ({ platform: 'facebook', day, organic_views: null, organic_impressions: 900, organic_video_views: 90, organic_likes: 20, organic_comments: 2, organic_shares: 4, posts_published: 1 });
+    const all = ['2025-07-01', '2025-07-02', '2025-07-03', '2025-07-04'];
+    // Les deux premiers jours sont couverts par l'export, les deux derniers ne sont lus que du connecteur.
+    const merged = (first: readonly string[]) => mergeOrganicHistory([...all.map(d => providerDay(d)), ...all.map(paidDay)], [exportDay('2025-07-01'), exportDay('2025-07-02')], first);
+    const video = (id: string, day: string): SocialPost => ({ platform: 'facebook', post_id: id, published_at: `${day}T09:00:00Z`, title: id, format: 'Vidéo', permalink: '', thumbnail_path: null, metrics: { impressions: 500, likes: 0, comments: 1, shares: 1 } });
+    it('flags the days whose likes and comments come from the export', () => {
+      const days = merged(['facebook']).filter(d => d.source === 'facebook_organic');
+      expect(days.map(d => [d.metrics['manualLikes'] ?? 0, d.metrics['manualComments'] ?? 0])).toEqual([[1, 1], [1, 1], [0, 0], [0, 0]]);
+      // Sans l'export en premier, le connecteur garde ses valeurs positives : aucun jour n'est lu de l'export.
+      expect(merged([]).filter(d => d.source === 'facebook_organic').every(d => d.metrics['manualLikes'] == null)).toBe(true);
+    });
+    it('adds the paid likes and comments on export days, never on connector days, and never the paid shares', () => {
+      const t = realBlendedTotals('facebook', merged(['facebook']), [], period, []);
+      // Jours export : 20 + 40 j'aime, 2 + 5 commentaires, 4 partages ; jours connecteur : 80 j'aime, 8 commentaires, 4 partages, sans payant.
+      expect(t.interactionBreakdown.map(b => b.v)).toEqual([2 * (20 + 40) + 2 * 80, 2 * (2 + 5) + 2 * 8, 4 * 4]);
+      expect(t.interactions).toBe(2 * 60 + 160 + 2 * 7 + 16 + 16);
+      // Impressions et vues de vidéo : l'organique du compte exclut le payant, qui s'y ajoute sur tous les jours.
+      expect(t.impressions).toBe(2 * 900 + 2 * 1000 + 4 * 4000);
+      expect(t.cpe).toBeCloseTo(40 / t.interactions!, 9);
+    });
+    it('is partial, never a guess, when a day read from the export has no paid row', () => {
+      const noPaidDay = merged(['facebook']).filter(d => !(d.source === 'facebook' && d.day === '2025-07-02'));
+      const t = realBlendedTotals('facebook', noPaidDay, [], period, []);
+      expect(t.missing['likes']).toEqual(['facebook:paid', 'facebook:export:2025-07-02']);
+      expect(t.missing['interactions']).toEqual(['facebook:paid', 'facebook:export:2025-07-02']);
+    });
+    it('flags the videos published on connector days, which the connector gives no reaction total, and says what is missing', () => {
+      const posts = [video('on-export', '2025-07-02'), video('on-connector', '2025-07-03'), video('later', '2025-07-04')];
+      const t = realBlendedTotals('facebook', merged(['facebook']), posts, period, []);
+      expect(t.missing['likes']).toEqual(['facebook:videos:2', 'facebook:export:2025-07-02']);
+      expect(t.missing['interactions']).toEqual(['facebook:videos:2', 'facebook:export:2025-07-02']);
+      expect(coverageDetails(t, 'interactions').tooltip).toContain('2 vidéos Facebook sans nombre de j’aime');
+      // Une vidéo publiée un jour couvert par l'export n'est pas signalée.
+      expect(realBlendedTotals('facebook', merged(['facebook']), [video('on-export', '2025-07-02')], period, []).missing['likes']).not.toContain('facebook:videos:1');
+      // Une vidéo dont le connecteur donne les j'aime n'est pas comptée comme inconnue.
+      const withLikes = { ...video('liked', '2025-07-03'), metrics: { impressions: 500, likes: 12, comments: 1, shares: 1 } };
+      expect(realBlendedTotals('facebook', merged(['facebook']), [withLikes], period, []).missing['likes']).toEqual(['facebook:export:2025-07-02']);
+      // Sans organique connu, aucun drapeau de plus : le total est déjà indisponible.
+      const noOrganic = realBlendedTotals('facebook', merged(['facebook']).filter(d => d.source !== 'facebook_organic'), posts, period, []);
+      expect(noOrganic.missing['likes']).toEqual(['facebook:organic']);
+    });
+    it('marks a period that runs past the last day of the imported history as another definition, and only then', () => {
+      const inside = realBlendedTotals('facebook', merged(['facebook']), [], { start: '2025-07-01', end: '2025-07-02' }, []);
+      expect(inside.missing['likes']).toBeUndefined();
+      expect(inside.missing['interactions']).toEqual([]);
+      const past = realBlendedTotals('facebook', merged(['facebook']), [], period, []);
+      expect(past.missing['likes']).toEqual(['facebook:export:2025-07-02']);
+      expect(past.missing['comments']).toEqual(['facebook:export:2025-07-02']);
+      expect(past.missing['interactions']).toEqual(['facebook:export:2025-07-02']);
+      expect(coverageDetails(past, 'interactions').tooltip).toContain('réactions lues du connecteur sur des jours que l’historique importé ne couvre pas (il s’arrête le 02/07/2025)');
+      // Avant le premier jour de l'historique, ou dans un trou : mêmes jours lus du connecteur, même drapeau.
+      const before = realBlendedTotals('facebook', [...['2025-06-29', '2025-06-30'].flatMap(d => [providerDay(d), paidDay(d)]), ...merged(['facebook'])], [], { start: '2025-06-29', end: '2025-07-02' }, []);
+      expect(before.missing['likes']).toEqual(['facebook:export:2025-07-02']);
+      // Deux périodes lues du seul connecteur (aucun jour importé chargé) se comparent entre elles : pas de drapeau.
+      const connectorOnly = realBlendedTotals('facebook', [...all.map(d => providerDay(d)), ...all.map(paidDay)], [], period, []);
+      expect(connectorOnly.missing['likes']).toBeUndefined();
+    });
+  });
+  it('compares a rate in points only between periods that cover the same sources', () => {
+    const period = { start: '2025-09-15', end: '2025-09-15' };
+    const posts: SocialPost[] = [];
+    const days: SocialDay[] = [{ platform: 'facebook', source: 'facebook_organic', day: period.end, followers_estimated: false, metrics: { postsAvailable: 1, impressions: 1000, likes: 50, comments: 0, shares: 0 } }];
+    const full = realBlendedTotals('facebook', days.concat({ platform: 'facebook', source: 'facebook', day: period.end, followers_estimated: false, metrics: { spend: 10, impressions: 1000, likes: 0, comments: 0, shares: 0 } }), posts, period, []);
+    const partial = realBlendedTotals('facebook', days.filter(d => d.source !== 'facebook_organic'), posts, period, []);
+    expect(comparablePoints(full, full, 'engagementRate')).toBe(0);
+    expect(comparablePoints(full, { ...full, engagementRate: 1 }, 'engagementRate')).toBe((full.engagementRate ?? 0) - 1);
+    expect(comparablePoints(full, { ...full, missing: { engagementRate: ['facebook:organic'] } }, 'engagementRate')).toBeUndefined();
+    expect(comparablePoints(full, { ...full, engagementRate: null }, 'engagementRate')).toBeUndefined();
+    expect(partial.engagementRate).toBeNull();
+  });
+  it('marks the compared value « partiel » only when its coverage differs from the displayed period and a figure is shown', () => {
+    const period = { start: '2025-09-15', end: '2025-09-15' };
+    const day = (source: string, metrics: Record<string, number>): SocialDay => ({ platform: 'facebook', source, day: period.end, followers_estimated: false, metrics });
+    const full = realBlendedTotals('facebook', [day('facebook_organic', { postsAvailable: 1, impressions: 1000, likes: 5, comments: 0, shares: 0 }), day('facebook', { spend: 10, impressions: 1000, likes: 0, comments: 0, shares: 0 })], [], period, []);
+    const partial = { ...full, missing: { ...full.missing, impressions: ['linkedin:organic'] } };
+    expect(prevShown(full, partial, 'impressions', '1,9M')).toBe('1,9M (partiel)');
+    // Même périmètre partiel des deux côtés : comparaison loyale, aucun marqueur ; période comparée complète : aucun marqueur.
+    expect(prevShown(partial, partial, 'impressions', '1,9M')).toBe('1,9M');
+    expect(prevShown(partial, full, 'impressions', '1,9M')).toBe('1,9M');
+    // Un chiffre non affiché n'est jamais marqué partiel.
+    expect(prevShown(full, partial, 'impressions', 'Donnée non disponible')).toBe('Donnée non disponible');
+    expect(prevShown(full, { ...partial, sourceUnavailable: true }, 'impressions', 'Donnée non disponible')).toBe('Source indisponible');
+    // Une clé sans liste de couverture (publications, budget...) n'est jamais marquée.
+    expect(prevShown(full, partial, 'spend', '1,5K€')).toBe('1,5K€');
+  });
   it('carries last known followers forward but never uses a future snapshot', () => {
     const snapshots = [{platform:'linkedin',source:'linkedin_organic',day:'2025-09-14',metrics:{followers:123},followers_estimated:true},{platform:'linkedin',source:'linkedin_organic',day:'2025-09-16',metrics:{followers:999},followers_estimated:false}];
     const t=realBlendedTotals('linkedin',snapshots,[],period,[]);
@@ -214,8 +337,19 @@ describe('real Windsor aggregates', () => {
       expect(t.videos).toBe(2);
       expect(t.impressions).toBe(3000);
     });
-    it('is not affected by a stored daily videoViews or by account views of the history', () => {
-      expect(realBlendedTotals('instagram', igDays({ videoViews: 777 }), publications, igPeriod, []).videoViews).toBe(300);
+    it('adds the Meta Ads video views of the period to the views of the videos published in it, like the other networks', () => {
+      const t = realBlendedTotals('instagram', igDays({ videoViews: 777 }), publications, igPeriod, []);
+      expect(t.videoViews).toBe(300 + 3 * 777);
+      // Les vues organiques d'une publication excluent le payant : pas de recouvrement ; le CPV reste budget ÷ vues payantes.
+      expect(t.cpv).toBeCloseTo(15 / (3 * 777), 9);
+      expect(t.missing['videoViews']).toBeUndefined();
+    });
+    it('flags the video views partial when the paid views of some days are unknown, and never shows the paid views alone', () => {
+      const unknownPaid = igDays().map(d => (d.source === 'facebook' && d.day === '2025-09-16' ? { ...d, metrics: { ...d.metrics, videoViews: null } } : d));
+      const t = realBlendedTotals('instagram', unknownPaid, publications, igPeriod, []);
+      expect(t.videoViews).toBe(300);
+      expect(t.missing['videoViews']).toEqual(['instagram:paid']);
+      expect(realBlendedTotals('instagram', igDays({ videoViews: 777, postsAvailable: null }), publications, igPeriod, []).videoViews).toBeNull();
     });
     it('shows 0 for a complete period without any video and null when publications are not synced', () => {
       expect(realBlendedTotals('instagram', igDays(), publications.filter(p => p.format !== 'Vidéo'), igPeriod, []).videoViews).toBe(0);

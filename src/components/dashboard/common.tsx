@@ -2,6 +2,7 @@ import { createContext, useContext, type ReactNode } from "react";
 import { FileText, ImageOff, Image as ImageIcon, Images, Megaphone, MessageSquareText, Video, type LucideIcon } from "lucide-react";
 import { readSocialData } from "@/lib/social-data.functions";
 import { type RealTotals } from "@/lib/social-totals";
+import { coverageDescription } from "@/lib/coverage-text";
 import { changePercent, formatBudget, formatEuro, formatNumber, formatPercent, formatChangePercent, formatPoints, typographicMinus, plural, labelForValue } from "@/lib/dashboard-format";
 import { PLATFORMS, type PlatformId } from "@/lib/dashboard-data";
 import { cn } from "@/lib/utils";
@@ -136,19 +137,25 @@ export function Kpi({
 export const shown = (t: RealTotals, value: string) =>
   t.sourceUnavailable && value.includes("non disponible") ? "Source indisponible" : value;
 
+/**
+ * Valeur de la période comparée, marquée « partiel » quand elle ne couvre pas les mêmes sources que la période affichée (sinon « vs 1,9M » se lirait comme un total complet) :
+ * c'est le cas d'une période sans historique pour un réseau, dont la variation est alors masquée.
+ */
+export const prevShown = (t: RealTotals, o: RealTotals, key: string, value: string) => {
+  const text = shown(o, value);
+  const partial =
+    (o.missing[key]?.length ?? 0) > 0 &&
+    JSON.stringify(o.missing[key] ?? []) !== JSON.stringify(t.missing[key] ?? []) &&
+    !text.includes("non disponible") &&
+    text !== "Source indisponible";
+  return partial ? `${text} (partiel)` : text;
+};
+
 export function coverageDetails(t: RealTotals, key: string, base?: string) {
   const missing = t.missing[key] ?? [];
-  const descriptions = missing.map((id) => {
-    const [platform, source, count] = id.split(":");
-    const name = PLATFORMS.find((p) => p.id === platform)?.name ?? platform;
-    if (source === "videos") {
-      const n = Number(count);
-      return `${n} ${plural(n, "vidéo")} ${name} sans nombre de vues`;
-    }
-    return source
-      ? `${source === "organic" ? "organique" : "payant"} ${name} non disponible sur cette période`
-      : `Réseau manquant : ${name}`;
-  });
+  const descriptions = missing.map((id) =>
+    coverageDescription(id, key, (platform) => PLATFORMS.find((p) => p.id === platform)?.name ?? platform, true),
+  );
   const tooltip = [base, ...descriptions].filter(Boolean).join(". ");
   return { ...(missing.length ? { note: "partiel" } : {}), ...(tooltip ? { tooltip } : {}) };
 }
@@ -160,6 +167,17 @@ export function comparableDelta(t: RealTotals, o: RealTotals, key: keyof RealTot
     (typeof current === "number" || current === null) &&
     (typeof previous === "number" || previous === null)
     ? delta(current, previous)
+    : undefined;
+}
+
+/** Écart en points d'un taux : comme comparableDelta, seulement entre deux périodes qui couvrent les mêmes réseaux et sources (sinon un changement de périmètre se lirait comme une évolution). */
+export function comparablePoints(t: RealTotals, o: RealTotals, key: keyof RealTotals & string) {
+  const current = t[key],
+    previous = o[key];
+  return JSON.stringify(t.missing[key] ?? []) === JSON.stringify(o.missing[key] ?? []) &&
+    typeof current === "number" &&
+    typeof previous === "number"
+    ? current - previous
     : undefined;
 }
 

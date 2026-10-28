@@ -104,6 +104,8 @@ export interface ClientInput {
 export interface KpiNotes {
   stories?: string;
   instagramInteractions?: string;
+  /** Phrase ajoutée à la définition des interactions Facebook quand un historique importé passe avant le connecteur (jours couverts, fin de l'historique). */
+  facebookInteractions?: string;
   /** Phrase ajoutée aux chiffres complétés par un historique manuel (impressions, interactions, vidéos, nouveaux abonnés). */
   history?: string;
   /** Source de repli de la valeur des abonnés, citée après l'instantané Windsor (par exemple « export de l’agence »). */

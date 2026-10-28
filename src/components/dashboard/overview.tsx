@@ -4,7 +4,7 @@ import { videosNote } from "@/lib/dashboard-format";
 import { PLATFORMS, type PlatformId } from "@/lib/dashboard-data";
 import { definition, type KpiKey } from "@/lib/kpi-definitions";
 import { youtubeTotals, addYoutubeToSocial, type YoutubeData } from "@/lib/youtube";
-import { type GoogleData, Kpi, type SocialData, type ViewPeriods, budget, coverageDetails, delta, eur, fmt, followerNote, pct, shown } from "@/components/dashboard/common";
+import { type GoogleData, Kpi, type SocialData, type ViewPeriods, budget, comparablePoints, coverageDetails, prevShown, delta, eur, fmt, followerNote, pct, shown } from "@/components/dashboard/common";
 
 export function TotalCards({
   t,
@@ -43,7 +43,7 @@ export function TotalCards({
         large={large}
         {...details("posts")}
         label={tk ? "Vidéos publiées" : "Posts publiés"}
-        prev={shown(o, fmt(o.posts))}
+        prev={prevShown(t, o, "posts", fmt(o.posts))}
         value={shown(t, fmt(t.posts))}
         d={change("posts", t.posts, o.posts)}
       />
@@ -51,7 +51,7 @@ export function TotalCards({
         large={large}
         {...details("videos", D("videosPublished"))}
         label="Vidéos publiées"
-        prev={shown(o, fmt(o.videos))}
+        prev={prevShown(t, o, "videos", fmt(o.videos))}
         value={shown(t, fmt(t.videos))}
         d={change("videos", t.videos, o.videos)}
       />
@@ -59,7 +59,7 @@ export function TotalCards({
         large={large}
         {...details("adsDelivered")}
         label="Annonces diffusées"
-        prev={shown(o, fmt(o.adsDelivered))}
+        prev={prevShown(t, o, "adsDelivered", fmt(o.adsDelivered))}
         value={shown(t, fmt(t.adsDelivered))}
         d={change("adsDelivered", t.adsDelivered, o.adsDelivered)}
       />
@@ -67,7 +67,7 @@ export function TotalCards({
         large={large}
         {...details("impressions", videoNote)}
         label="Impressions"
-        prev={shown(o, fmt(o.impressions))}
+        prev={prevShown(t, o, "impressions", fmt(o.impressions))}
         value={shown(t, fmt(t.impressions))}
         d={change("impressions", t.impressions, o.impressions)}
       />
@@ -75,7 +75,7 @@ export function TotalCards({
         large={large}
         {...details("impressionsPerPost")}
         label="Impressions moy. / post"
-        prev={shown(o, fmt(o.impressionsPerPost))}
+        prev={prevShown(t, o, "impressionsPerPost", fmt(o.impressionsPerPost))}
         value={shown(t, fmt(t.impressionsPerPost))}
         d={change("impressionsPerPost", t.impressionsPerPost, o.impressionsPerPost)}
       />
@@ -92,7 +92,7 @@ export function TotalCards({
           .filter(Boolean)
           .join(" · ")}
         label="Vues de vidéo"
-        prev={shown(o, fmt(o.videoViews))}
+        prev={prevShown(t, o, "videoViews", fmt(o.videoViews))}
         value={shown(t, fmt(t.videoViews))}
         d={t.videos === 0 && t.videoViews === 0 ? undefined : change("videoViews", t.videoViews, o.videoViews)}
       />
@@ -100,7 +100,7 @@ export function TotalCards({
         large={large}
         {...details("interactions", videoNote)}
         label="Interactions"
-        prev={shown(o, fmt(o.interactions))}
+        prev={prevShown(t, o, "interactions", fmt(o.interactions))}
         value={shown(t, fmt(t.interactions))}
         d={change("interactions", t.interactions, o.interactions)}
       />
@@ -108,7 +108,7 @@ export function TotalCards({
         large={large}
         {...details("clicks")}
         label="Clics sur les liens"
-        prev={shown(o, fmt(o.clicks))}
+        prev={prevShown(t, o, "clicks", fmt(o.clicks))}
         value={shown(t, fmt(t.clicks))}
         d={change("clicks", t.clicks, o.clicks)}
       />
@@ -116,8 +116,8 @@ export function TotalCards({
         large={large}
         {...details("engagementRate")}
         label="Taux d'engagement"
-        prev={shown(o, pct(o.engagementRate))}
-        pts={t.engagementRate != null && o.engagementRate != null ? t.engagementRate - o.engagementRate : undefined}
+        prev={prevShown(t, o, "engagementRate", pct(o.engagementRate))}
+        pts={comparablePoints(t, o, "engagementRate")}
         value={shown(t, pct(t.engagementRate))}
         d={change("engagementRate", t.engagementRate, o.engagementRate)}
       />
@@ -125,7 +125,7 @@ export function TotalCards({
         large={large}
         {...details("spend")}
         label="Budget"
-        prev={shown(o, budget(o.spend))}
+        prev={prevShown(t, o, "spend", budget(o.spend))}
         value={shown(t, budget(t.spend))}
         d={change("spend", t.spend, o.spend)}
       />
@@ -134,7 +134,7 @@ export function TotalCards({
         large={large}
         {...details(tk ? "cpv" : "cpe")}
         label={tk ? "CPV moyen" : "CPE moyen"}
-        prev={shown(o, eur(tk ? o.cpv : o.cpe, 2))}
+        prev={prevShown(t, o, tk ? "cpv" : "cpe", eur(tk ? o.cpv : o.cpe, 2))}
         value={shown(t, eur(tk ? t.cpv : t.cpe, 2))}
         d={change(tk ? "cpv" : "cpe", tk ? t.cpv : t.cpe, tk ? o.cpv : o.cpe)}
         inverse
@@ -143,7 +143,7 @@ export function TotalCards({
         large={large}
         {...details("cpm")}
         label="CPM moyen"
-        prev={shown(o, eur(o.cpm, 2))}
+        prev={prevShown(t, o, "cpm", eur(o.cpm, 2))}
         value={shown(t, eur(t.cpm, 2))}
         d={change("cpm", t.cpm, o.cpm)}
         inverse

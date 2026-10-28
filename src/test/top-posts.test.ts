@@ -12,15 +12,80 @@ describe('top posts', () => {
   it('picks visibility, engagement and lowest sponsored CPM; organic posts have no budget', () => {
     const rows = [post('a', { impressions: 1000, likes: 10, comments: 0, shares: 0 }), post('b', { impressions: 500, likes: 90, comments: 5, shares: 5 }, { spend: 10, impressions: 4000 }), post('c', { impressions: 200, likes: 1, comments: 0, shares: 0 }, { spend: 10, impressions: 1000 })].map(x => postStats(x));
     const best = topPosts(rows);
-    expect(best.visibility?.id).toBe('a');
+    // Instagram : les impressions d'une publication boostée comprennent celles de ses annonces (b : 500 + 4 000), comme dans les classements de l'agence.
+    expect(best.visibility?.id).toBe('b');
     expect(best.engagement?.id).toBe('b');
     expect(best.cpm?.id).toBe('b');
     expect(best.cpm?.cpm).toBe(2.5);
     expect(rows[0]?.spend).toBeNull();
-    expect(rows[1]?.rate).toBe(20);
+    // Le taux d'une publication boostée sur Instagram n'est pas calculé : ses interactions sont organiques, ses impressions comprennent les annonces.
+    expect(rows[1]?.rate).toBeNull();
+    expect(rows[0]?.rate).toBe(1);
   });
   it('has no CPM winner without sponsored posts', () => {
     expect(topPosts([postStats(post('a', { impressions: 1 }))]).cpm).toBeNull();
+  });
+});
+
+describe('impressions of a boosted publication', () => {
+  const boosted = { spend: 10, impressions: 4000 };
+  const on = (platform: string, m: Record<string, number | null>, sponsored = boosted) => ({ ...post('p', m as Record<string, number>, sponsored), platform });
+  it('adds the ads\' impressions on Instagram and LinkedIn, whose publication figures exclude the paid delivery', () => {
+    for (const platform of ['instagram', 'linkedin']) {
+      const x = postStats(on(platform, { impressions: 500, likes: 40, comments: 5, shares: 5 }));
+      expect(x.impressions).toBe(4500);
+      expect(x.rate).toBeNull();
+      expect(x.paidImpressions).toBe(4000);
+      expect(x.cpm).toBe(2.5);
+    }
+  });
+  it('adds the ads\' impressions whatever the way the ad is linked to the post (identifier, name rule or by hand): the budget and the CPM already cover every placement', () => {
+    for (const adLink of [undefined, 'rule', 'manual'] as const) {
+      const x = postStats({ ...on('instagram', { impressions: 500, likes: 40, comments: 5, shares: 5 }), ...(adLink ? { adLink } : {}) });
+      expect(x.impressions).toBe(4500);
+      expect(x.paidImpressions).toBe(4000);
+    }
+  });
+  it('has no engagement rate for a boosted Instagram or LinkedIn post, so it never enters the engagement flops, and keeps its rate on Facebook and TikTok', () => {
+    const now = Date.parse('2026-10-10T12:00:00Z');
+    const old = (platform: string, id: string, m: Record<string, number>, sponsored?: { spend: number; impressions: number }) => postStats({ ...post(id, m, sponsored), platform, published_at: '2026-10-01T10:00:00Z' });
+    for (const platform of ['instagram', 'linkedin']) {
+      const rows = [old(platform, 'boosted', { impressions: 100, likes: 1, comments: 0, shares: 0 }, boosted), old(platform, 'a', { impressions: 1000, likes: 50, comments: 0, shares: 0 }), old(platform, 'b', { impressions: 1000, likes: 80, comments: 0, shares: 0 }), old(platform, 'c', { impressions: 1000, likes: 90, comments: 0, shares: 0 })];
+      const flops = flopPosts(rows, now);
+      expect(rows[0]?.rate).toBeNull();
+      expect(flops.engagement.rows.map(r => r.id)).not.toContain('boosted');
+      expect(flops.engagement.eligible).toBe(3);
+      // Elle reste classée en visibilité : son total (impressions organiques + annonces) est connu.
+      expect(flops.visibility.eligible).toBe(4);
+    }
+    for (const platform of ['facebook', 'tiktok']) {
+      const x = old(platform, 'boosted', { impressions: 5000, likes: 40, comments: 5, shares: 5 }, boosted);
+      expect(x.rate).toBeCloseTo(50 / 5000 * 100, 9);
+    }
+  });
+  it('leaves Facebook and TikTok alone (their totals already include the promotion) and posts without ads', () => {
+    expect(postStats(on('facebook', { impressions: 5000, likes: 40, comments: 5, shares: 5 })).impressions).toBe(5000);
+    expect(postStats(on('tiktok', { impressions: 5000, likes: 40, comments: 5, shares: 5 })).impressions).toBe(5000);
+    expect(postStats({ ...post('p', { impressions: 500, likes: 40, comments: 5, shares: 5 }), platform: 'instagram' }).impressions).toBe(500);
+  });
+  it('keeps unknown impressions unknown: the paid delivery never stands for them', () => {
+    // Interactions au-dessus des impressions : le réseau a perdu ses statistiques, le payant seul ne les remplace pas.
+    expect(postStats(on('linkedin', { impressions: 7, likes: 200, comments: 4, shares: 15 })).impressions).toBeNull();
+    expect(postStats(on('instagram', { impressions: null, likes: 1, comments: 1, shares: 1 })).impressions).toBeNull();
+  });
+});
+
+describe('Facebook videos without a reaction total', () => {
+  const fb = (format: string, m: Record<string, number>) => ({ ...post('f', m), platform: 'facebook', format });
+  it('reads a zero like total on a video as unknown, never as a figure', () => {
+    const video = postStats(fb('Vidéo', { impressions: 1000, likes: 0, comments: 4, shares: 6 }));
+    expect(video.likes).toBeNull();
+    expect(video.interactions).toBeNull();
+    expect(video.rate).toBeNull();
+    // Un total fourni par le connecteur est gardé, un zéro sur une photo est un vrai zéro, une autre plateforme n'est pas concernée.
+    expect(postStats(fb('Vidéo', { impressions: 1000, likes: 25, comments: 4, shares: 6 })).interactions).toBe(35);
+    expect(postStats(fb('Photo', { impressions: 1000, likes: 0, comments: 4, shares: 6 })).interactions).toBe(10);
+    expect(postStats({ ...fb('Vidéo', { impressions: 1000, likes: 0, comments: 4, shares: 6 }), platform: 'tiktok' }).interactions).toBe(10);
   });
 });
 
@@ -315,7 +380,7 @@ describe('flops', () => {
     expect(flopPosts(rows, now).visibility.eligible).toBe(2);
   });
   it('keeps a boosted account publication in the ranking, flagged Paid', () => {
-    const rows = [postStats({ ...post('boosted', full(20), { spend: 30, impressions: 1000 }), published_at: '2026-10-01T10:00:00Z' }), at('a', 10, full(500)), at('b', 10, full(600))];
+    const rows = [postStats({ ...post('boosted', full(20), { spend: 30, impressions: 5 }), published_at: '2026-10-01T10:00:00Z' }), at('a', 10, full(500)), at('b', 10, full(600))];
     const flops = flopPosts(rows, now);
     expect(flops.visibility.rows[0]?.id).toBe('boosted');
     expect(flops.visibility.rows[0]?.type).toBe('Paid');

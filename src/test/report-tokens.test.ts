@@ -105,6 +105,11 @@ describe('report tokens', () => {
     expect(monthLabel({ start: '2026-09-01', end: '2026-09-29' })).toBeNull();
     expect(yearLabel({ start: '2025-01-01', end: '2025-12-30' })).toBeNull();
   });
+  it('words the coverage notes like the dashboard: videos without likes, history ended, paid views', () => {
+    const notes = partialNotes('facebook', { missing: { interactions: ['facebook:videos:2', 'facebook:export:2025-07-02'], videoViews: ['facebook:videos:1'] }, stories: undefined });
+    expect(notes).toContain('Facebook, interactions : partiel (2 vidéos Facebook sans nombre de j’aime ; Facebook : réactions lues du connecteur sur des jours que l’historique importé ne couvre pas (il s’arrête le 02/07/2025), autre définition)');
+    expect(notes).toContain('Facebook, vues de vidéo : partiel (1 vidéo Facebook sans nombre de vues)');
+  });
   it('uses the period name for the {{trimestre}} marker', () => {
     const all = { global: full, linkedin: full, facebook: full, instagram: full, tiktok: full };
     expect(buildReportTokens({ start: '2026-09-01', end: '2026-09-30' }, all)['trimestre']).toBe('septembre 2026');
@@ -119,7 +124,11 @@ describe('report tokens', () => {
     expect(lines['videos']).toEqual({ vs: 'vs 3 (−67%)', tone: 'bad' });
     // Une comparaison absente donne « — » et aucune couleur ; un périmètre différent n'affiche aucun écart.
     expect(cardLines(now, { ...before, impressions: null })['impressions']).toEqual({ vs: 'vs —', tone: 'neutral' });
-    expect(cardLines(now, { ...before, missing: { impressions: ['linkedin:organic'] } })['impressions']).toEqual({ vs: 'vs 1,7M', tone: 'neutral' });
+    expect(cardLines(now, { ...before, missing: { impressions: ['linkedin:organic'] } })['impressions']).toEqual({ vs: 'vs 1,7M (partiel)', tone: 'neutral' });
+    // Même périmètre partiel des deux côtés : la comparaison est loyale, aucun marqueur sur la valeur comparée.
+    expect(cardLines({ ...now, missing: { impressions: ['linkedin:organic'] } }, { ...before, missing: { impressions: ['linkedin:organic'] } })['impressions']?.vs).toBe('vs 1,7M (+24%)');
+    // L'écart en points d'un taux est aussi muet quand les deux périodes ne couvrent pas les mêmes réseaux.
+    expect(cardLines(now, { ...before, missing: { engagementRate: ['linkedin:organic'] } })['engagementRate']).toEqual({ vs: 'vs 0,4% (partiel)', tone: 'neutral' });
     const tokens = buildReportTokens(q2, { global: now, linkedin: now, facebook: now, instagram: now, tiktok: now }, { label: 'T2 2024', totals: { global: before, linkedin: before, facebook: before, instagram: before, tiktok: before } });
     expect(tokens['linkedin.publications_vs']).toBe('vs 20 (+5,0%)');
     expect(tokens['linkedin.cpm_tone']).toBe('bad');

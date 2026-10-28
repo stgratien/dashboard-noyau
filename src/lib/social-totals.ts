@@ -138,32 +138,79 @@ export function realBlendedTotals(
     const rows = own.filter((d) => d.source === paid && igManualDays.has(d.day));
     return rows.length !== igManualDays.size ? null : nullableSum(rows.map((d) => d.metrics[field]));
   };
-  // TikTok : les vues et interactions d'une vidéo comprennent déjà celles de sa promotion (post boosté : toutes les annonces TikTok du client sont rattachées à une publication, la diffusion payante
-  // d'une vidéo est comptée dans ses vues). Ajouter les chiffres de TikTok Ads les compterait deux fois ; le payant ne sert ici qu'au budget et aux coûts (CPM, CPV, CPE).
-  const tiktokPromoted = (field: string) =>
-    p === "tiktok" && ["impressions", "videoViews", "likes", "comments", "shares"].includes(field);
+  // Champs dont le chiffre propre comprend déjà la diffusion payante : le payant n'y est jamais ajouté (il serait compté deux fois) et ne sert qu'au budget et aux coûts.
+  // TikTok : les annonces sont des posts boostés, la diffusion payante d'une vidéo est dans ses vues et ses interactions. Facebook : les partages (totaux à vie des publications, que l'export suit de près).
+  const paidInOwnFigures = (field: string) =>
+    p === "tiktok" ? ["impressions", "videoViews", "likes", "comments", "shares"].includes(field) : p === "facebook" && field === "shares";
+  // Facebook, j'aime et commentaires : le connecteur donne les totaux à vie des publications, annonces comprises (jamais de payant en plus) ; l'export donne les réactions ORGANIQUES du jour (environ 7 % de celles
+  // des annonces y figurent) : sur les jours dont la valeur vient de l'export (drapeaux manualLikes / manualComments posés par mergeOrganicHistory) les actions Meta Ads s'y ajoutent, comme pour Instagram.
+  const fbManualDays = (flag: string) =>
+    new Set(own.filter((d) => d.source === organic && d.metrics[flag] === 1 && d.day <= endFor(organic)).map((d) => d.day));
+  const fbPaidOnManual = (field: string): number | null => {
+    const days = fbManualDays(field === "likes" ? "manualLikes" : "manualComments");
+    if (days.size === 0) return 0;
+    const rows = own.filter((d) => d.source === paid && days.has(d.day));
+    return rows.length !== days.size ? null : nullableSum(rows.map((d) => d.metrics[field]));
+  };
+  const facebookReaction = (field: string) => p === "facebook" && (field === "likes" || field === "comments");
   const blended = (field: string) => {
     const a = organicSum(field),
-      b = tiktokPromoted(field)
+      b = paidInOwnFigures(field)
         ? 0
-        : p === "instagram" && ["impressions", "videoViews", "likes", "comments", "shares"].includes(field)
-          ? igPaidOnManual(field)
-          : sum(paid, field);
+        : facebookReaction(field)
+          ? fbPaidOnManual(field)
+          : p === "instagram" && ["impressions", "videoViews", "likes", "comments", "shares"].includes(field)
+            ? igPaidOnManual(field)
+            : sum(paid, field);
     if (a == null || b == null)
       missing[field] = [a == null ? `${p}:organic` : "", b == null ? `${p}:paid` : ""].filter(Boolean);
-    // Instagram : le payant est déjà dans les chiffres du compte ; sans organique il n'y a rien à afficher (jamais « 0 »). TikTok : sans vidéos publiées connues, pas de payant seul à la place.
-    if ((p === "instagram" || tiktokPromoted(field)) && a == null) return null;
+    // Instagram : le payant est déjà dans les chiffres du compte ; sans organique il n'y a rien à afficher (jamais « 0 »). TikTok et Facebook : même règle pour leurs champs ci-dessus, le payant seul ne remplace pas le total.
+    if ((p === "instagram" || paidInOwnFigures(field) || facebookReaction(field)) && a == null) return null;
     return a == null ? b : b == null ? a : a + b;
   };
   const impressions = blended("impressions");
   // Instagram : les vues connues sont additionnées ; les vidéos sans chiffre rendent le total partiel (jamais un zéro inventé).
   if (p === "instagram" && videosWithViews.length > 0 && videosWithViews.length < videoCohort.length)
     missing["videoViews"] = [`instagram:videos:${videoCohort.length - videosWithViews.length}`];
+  // Instagram : « Vues de vidéo » = vues des reels et vidéos publiés sur la période (organiques, à leur date de publication) + vues de vidéo des annonces Meta Ads sur Instagram (par jour de diffusion),
+  // comme les autres réseaux (organique + payant) : les vues organiques d'une publication excluent la diffusion payante. Sans vues organiques connues il n'y a rien à afficher (jamais le payant seul).
+  const videoViews = (() => {
+    if (p !== "instagram") return blended("videoViews");
+    const a = organicSum("videoViews");
+    if (a == null) return null;
+    const b = sum(paid, "videoViews");
+    if (b == null) {
+      missing["videoViews"] = [...(missing["videoViews"] ?? []), `${p}:paid`];
+      return a;
+    }
+    return a + b;
+  })();
   const likes = blended("likes"),
     comments = blended("comments"),
     shares = blended("shares");
+  // Facebook, jours lus du connecteur : le total de réactions d'une vidéo est inconnu (le connecteur renvoie 0), les vidéos publiées ces jours-là rendent les j'aime, donc les interactions, partiels.
+  // L'historique importé est un instantané : les jours de la période que l'historique ne couvre pas (au-delà de son dernier jour, avant son premier, ou dans un trou) sont lus du connecteur (totaux à vie des publications, vidéos sans j'aime,
+  // réactions payantes gagnées après coup par des publications plus anciennes perdues), autre définition que les jours couverts : la période est marquée partielle (« facebook:export:<dernier jour> ») et sa variation masquée,
+  // tant que des jours de l'historique sont chargés avec elle (deux périodes lues du seul connecteur se comparent entre elles). Sans organique connu, rien de tout cela n'a de sens (déjà « indisponible »).
+  if (p === "facebook" && likes != null) {
+    const fromExport = fbManualDays("manualLikes");
+    const unknownVideos = cohort.filter((post) => VIDEO_FORMATS.includes(post.format) && !post.metrics["likes"] && !fromExport.has(post.published_at.slice(0, 10))).length;
+    if (unknownVideos > 0) missing["likes"] = [...(missing["likes"] ?? []), `facebook:videos:${unknownVideos}`];
+    const exportDays = days.filter((d) => d.platform === p && d.source === organic && (d.metrics["manualLikes"] === 1 || d.metrics["manualComments"] === 1)).map((d) => d.day).sort();
+    const lastExportDay = exportDays.at(-1);
+    const connectorDay = own.some(
+      (d) => d.source === organic && d.day <= endFor(organic) && d.metrics["manualLikes"] !== 1 && d.metrics["manualComments"] !== 1,
+    );
+    if (lastExportDay && connectorDay) {
+      missing["likes"] = [...(missing["likes"] ?? []), `${p}:export:${lastExportDay}`];
+      missing["comments"] = [...(missing["comments"] ?? []), `${p}:export:${lastExportDay}`];
+    }
+  }
   const interactions = nullableSum([likes, comments, shares]);
   missing["interactions"] = [...new Set(["likes", "comments", "shares"].flatMap((key) => missing[key] ?? []))];
+  // Les clics sont tenus sous la clé « linkClicks » par blended() ; Global et les cartes lisent « clicks » : la couverture partielle des clics doit y être aussi.
+  const clicks = p === "instagram" || p === "linkedin" ? sum(paid, "linkClicks") : blended("linkClicks");
+  missing["clicks"] = [...(missing["linkClicks"] ?? [])];
   missing["impressionsPerPost"] = missing["impressions"] ?? [];
   missing["engagementRate"] = [...new Set([...(missing["impressions"] ?? []), ...(missing["interactions"] ?? [])])];
   // Le CPE divise le budget par les interactions totales : il est partiel quand elles le sont.
@@ -218,8 +265,7 @@ export function realBlendedTotals(
     newFollowersProvisional: gains.provisional,
     impressions,
     impressionsPerPost: divide(impressions, posts),
-    // Instagram : cohorte de vidéos publiées uniquement (le payant du compte est déjà compris dans ses vues, sans détail par format).
-    videoViews: p === "instagram" ? organicSum("videoViews") : blended("videoViews"),
+    videoViews,
     interactions,
     interactionBreakdown: [
       { name: "J’aime", v: likes },
@@ -227,7 +273,7 @@ export function realBlendedTotals(
       { name: "Partages", v: shares },
     ],
     engagementRate: divide(interactions, impressions, 100),
-    clicks: p === "instagram" || p === "linkedin" ? sum(paid, "linkClicks") : blended("linkClicks"),
+    clicks,
     spend,
     cpm: divide(spend, sum(paid, "impressions"), 1000),
     cpc: divide(spend, sum(paid, "linkClicks")),

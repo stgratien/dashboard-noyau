@@ -61,11 +61,16 @@ export function unusableStatMonths(posts: { platform: string; published_at: stri
 /** Per-post figures; budget/CPM come only from ads linked to the post, never from account totals. `unusableMonths` : voir unusableStatMonths. */
 export function postStats(x: SocialPost, unusableMonths?: ReadonlySet<string>) {
   const n = (k: string) => x.metrics[k] ?? null;
-  const likes = n('likes'), comments = n('comments'), shares = n('shares');
+  // Facebook : le connecteur ne fournit aucun total de réactions pour les vidéos (0 sur toutes, alors que leurs annonces en ont) : ce zéro est inconnu, jamais un chiffre.
+  const likes = x.platform === 'facebook' && VIDEO_FORMATS.includes(x.format) && !n('likes') ? null : n('likes'), comments = n('comments'), shares = n('shares');
   const interactions = likes == null || comments == null || shares == null ? null : likes + comments + shares;
   // Impressions inconnues (« — », hors classements, sans taux d'engagement) quand elles sont impossibles (interactions supérieures : jamais un taux de 182 %)
   // ou quand tout le mois de la publication a perdu ses statistiques auprès du réseau (LinkedIn ne les garde qu'environ 14 mois).
-  const impressions = impossibleImpressions(x.metrics) || unusableMonths?.has(postMonthKey(x.platform, x.published_at)) ? null : n('impressions');
+  const organicImpressions = impossibleImpressions(x.metrics) || unusableMonths?.has(postMonthKey(x.platform, x.published_at)) ? null : n('impressions');
+  // Instagram et LinkedIn : les impressions d'une publication (chiffres du réseau) excluent la diffusion payante ; celles de ses annonces (toutes diffusions, comme son budget et son CPM : une annonce issue d'un post Instagram
+  // diffuse aussi sur Facebook) s'y ajoutent, comme dans les classements de l'agence. Facebook et TikTok : le total de la publication comprend déjà son payant. Impressions inconnues : le payant seul ne les remplace pas.
+  const paidImpressions = (x.platform === 'instagram' || x.platform === 'linkedin') && x.sponsored && x.sponsored.impressions > 0 ? x.sponsored.impressions : 0;
+  const impressions = organicImpressions == null ? null : organicImpressions + paidImpressions;
   const spend = x.sponsored && x.sponsored.spend > 0 ? x.sponsored.spend : null;
   const cpm = spend != null && x.sponsored && x.sponsored.impressions > 0 ? spend / x.sponsored.impressions * 1000 : null;
   // CPE : budget de ses annonces ÷ interactions totales de la publication (j'aime + commentaires + partages, organique et payant confondus, comme les colonnes du tableau).
@@ -75,7 +80,7 @@ export function postStats(x: SocialPost, unusableMonths?: ReadonlySet<string>) {
     thumbnail_url: x.thumbnail_url ?? '', permalink: safePostUrl(x.platform, x.permalink),
     ts: Date.parse(x.published_at),
     date: new Date(x.published_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Paris' }),
-    impressions, likes, comments, shares, interactions, rate: interactions == null || !impressions ? null : interactions / impressions * 100, spend, cpm, cpe,
+    impressions, paidImpressions, likes, comments, shares, interactions, rate: interactions == null || !impressions || paidImpressions > 0 ? null : interactions / impressions * 100, spend, cpm, cpe,
     // Une publication qui a de la dépense publicitaire est « Paid » (elle reste une publication du compte : organic = true).
     type: (spend != null ? 'Paid' : 'Organique') as PostType,
     organic: true,
@@ -112,7 +117,7 @@ export function paidAdStats(a: PaidAd): PostStats {
   return { id: `ad:${a.ad_id}`, title: a.title, format: 'Publicité', vertical: a.platform === 'tiktok', thumbnail_url: a.thumbnail_url, permalink: a.permalink,
     ts: Date.parse(`${a.first_day}T12:00:00Z`),
     date: new Date(`${a.first_day}T12:00:00Z`).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Paris' }),
-    impressions: views, likes: a.likes, comments: a.comments, shares: a.shares, interactions,
+    impressions: views, paidImpressions: 0, likes: a.likes, comments: a.comments, shares: a.shares, interactions,
     rate: interactions == null || !views ? null : interactions / views * 100,
     spend: a.spend > 0 ? a.spend : null, cpm: a.spend > 0 && a.impressions > 0 ? a.spend / a.impressions * 1000 : null,
     cpe: a.spend > 0 && interactions ? a.spend / interactions : null, type: 'Paid', organic: false, adLink: null };

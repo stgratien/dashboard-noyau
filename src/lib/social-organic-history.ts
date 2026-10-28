@@ -45,7 +45,12 @@ export function mergeOrganicHistory(days: SocialDay[], manual: ManualOrganicDay[
     // Instagram videoViews come from the published-video cohort: the agency export has one views column for all formats.
     const fields = { impressions: instagram ? igTotal : record.organic_impressions ?? null, videoViews: instagram ? null : record.organic_video_views ?? null, likes: record.organic_likes, comments: record.organic_comments, shares: record.organic_shares };
     const first = manualFirst.includes(record.platform);
-    for (const [field, value] of Object.entries(fields)) if (value != null && (first || row.metrics[field] == null || (row.metrics[field] ?? 0) <= 0)) row.metrics[field] = value;
+    for (const [field, value] of Object.entries(fields)) {
+      if (value == null || !(first || row.metrics[field] == null || (row.metrics[field] ?? 0) <= 0)) continue;
+      row.metrics[field] = value;
+      // Facebook : le connecteur donne les totaux à vie des publications (promotion comprise), l'export les réactions organiques du jour : realBlendedTotals ajoute les actions Meta Ads aux seuls jours repris de l'export.
+      if (record.platform === 'facebook' && (field === 'likes' || field === 'comments')) row.metrics[field === 'likes' ? 'manualLikes' : 'manualComments'] = 1;
+    }
     if (record.posts_published != null) { row.metrics['manualPostsPublished'] = record.posts_published; row.metrics['postsAvailable'] = 1; }
     // Explicit manual zero values are known values, not provider-retention sentinels.
     row.metrics['manualOrganicHistory'] = 1;

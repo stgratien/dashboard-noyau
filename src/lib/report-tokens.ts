@@ -1,4 +1,5 @@
 import type { RealTotals } from './social-totals';
+import { coverageDescription } from './coverage-text';
 import { changePercent, formatBudget, formatChangePercent, formatEuro, formatNumber, formatPercent, formatPoints, typographicMinus } from './dashboard-format';
 import { EDITIONS, type Period } from './dashboard-periods';
 import { client } from './client';
@@ -138,12 +139,14 @@ export function cardLines(current: ReportTotals, previous: ReportTotals) {
     const a = current[key] as number | null | undefined, b = previous[key] as number | null | undefined;
     const sameScope = JSON.stringify(current.missing?.[key] ?? []) === JSON.stringify(previous.missing?.[key] ?? []);
     const noVideoChange = metric === 'videoViews' && current.videos === 0 && current.videoViews === 0;
-    const pts = points && a != null && b != null ? a - b : undefined;
+    const pts = points && a != null && b != null && sameScope ? a - b : undefined;
     const d = !sameScope || noVideoChange ? undefined : changePercent(a, b);
     const shift = prevShown === '—' ? undefined : points ? pts : d;
     const change = shift === undefined ? undefined : points ? formatPoints(pts as number) : formatChangePercent(d as number);
     const good = shift === undefined ? true : inverse ? shift <= 0 : shift >= 0;
-    lines[metric] = { vs: `vs ${prevShown}${change === undefined ? '' : ` (${change})`}`, tone: change === undefined ? 'neutral' : good ? 'good' : 'bad' };
+    // Une valeur comparée qui ne couvre pas les mêmes sources que la période (réseau sans historique, par exemple) est marquée « partiel » : sans cela « vs 1,9M » se lirait comme un total complet.
+    const partialPrev = !sameScope && (previous.missing?.[key]?.length ?? 0) > 0 && prevShown !== '—';
+    lines[metric] = { vs: `vs ${prevShown}${partialPrev ? ' (partiel)' : ''}${change === undefined ? '' : ` (${change})`}`, tone: change === undefined ? 'neutral' : good ? 'good' : 'bad' };
   }
   return lines;
 }
@@ -201,18 +204,14 @@ const FIGURES: Record<string, [label: string, key: string]> = {
   cpm: ['CPM', 'cpm'], cpe: ['CPE', 'cpe'], cpv: ['CPV', 'cpv'], clicks: ['clics', 'clicks'],
 };
 /** Même lecture que l'info « partiel » du tableau de bord (coverageDetails) : « 3 vidéos Instagram sans nombre de vues », « organique LinkedIn non disponible… ». */
-function coverageText(id: string) {
-  const [platform = '', source, count] = id.split(':');
-  const name = NETWORK_NAMES[platform] ?? platform;
-  if (source === 'videos') return `${Number(count)} ${Number(count) > 1 ? 'vidéos' : 'vidéo'} ${name} sans nombre de vues`;
-  if (source) return `${source === 'organic' ? 'organique' : 'payant'} ${name} non disponible sur cette période`;
-  return `réseau manquant : ${name}`;
+function coverageText(id: string, key: string) {
+  return coverageDescription(id, key, (platform) => NETWORK_NAMES[platform] ?? platform);
 }
 /** Chiffres que le tableau de bord marque « partiel » : le rapport les écrit tels quels, cette liste permet de les relire. */
 export function partialNotes(prefix: string, t: Pick<ReportTotals, 'missing' | 'stories'>): string[] {
   const notes = Object.entries(FIGURES).flatMap(([suffix, [label, key]]) => {
     const missing = t.missing?.[key] ?? [];
-    return missing.length ? [`${NETWORK_NAMES[prefix] ?? prefix}, ${label} : partiel (${missing.map(coverageText).join(' ; ')})`] : [];
+    return missing.length ? [`${NETWORK_NAMES[prefix] ?? prefix}, ${label} : partiel (${missing.map((id) => coverageText(id, key)).join(' ; ')})`] : [];
   });
   const s = t.stories;
   const name = NETWORK_NAMES[prefix] ?? prefix;
