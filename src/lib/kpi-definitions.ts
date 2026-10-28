@@ -11,7 +11,7 @@ const sentence = (...parts: (string | false | undefined)[]) => parts.filter(Bool
 const INSTAGRAM_TOTAL = 'Instagram : total du compte Windsor, payant compris (les impressions Meta Ads ne sont jamais ajoutées).';
 const INSTAGRAM_INTERACTIONS = notes.instagramInteractions ?? 'Instagram : total du compte Windsor, payant compris. Les j’aime, commentaires et partages Meta Ads ne sont ajoutés que sur les jours repris d’un historique importé.';
 const INSTAGRAM_VIDEO = 'Instagram : vues cumulées des reels et vidéos publiés sur la période, comptées à leur date de publication.';
-const TIKTOK_COHORT ='TikTok organique : vues et interactions des vidéos publiées sur la période (cumul à date).';
+const TIKTOK_COHORT ='TikTok : vues et interactions des vidéos publiées sur la période (cumul à date). Les annonces TikTok promeuvent des vidéos du compte : leurs vues et interactions sont déjà comprises dans celles des vidéos et ne sont jamais ajoutées une seconde fois. Sans vidéo publiée sur la période, ces chiffres sont à zéro.';
 const GA = 'Source : script Google Ads exécuté chaque nuit dans le compte (sans Windsor).';
 const PAID_ONLY = 'Payant uniquement (connecteurs Ads).';
 const STORIES = notes.stories ?? 'Stories Instagram, comptées à leur jour de publication (Paris). Instagram ne fournissant les chiffres d’une story que pendant ses 24 h de vie, elles sont relevées toutes les 3 h depuis la mise en service du suivi ; sans relevé, la période est « non disponible ». Une période couverte en partie est marquée « partiel » et sa variation n’est pas affichée. Source : Windsor.ai.';
@@ -29,8 +29,9 @@ export function definition(key: KpiKey, p?: PlatformId | 'all'): string {
   const tk = p === 'tiktok';
   const all = p === 'all' || p == null;
   const ig = p === 'instagram';
-  const mix = ig ? INSTAGRAM_TOTAL : BLENDED;
-  const mixInteractions = ig ? INSTAGRAM_INTERACTIONS : BLENDED;
+  // TikTok : pas de « organique + payant » (le payant est déjà dans les vidéos), la phrase propre à TikTok dit ce qui est compté.
+  const mix = ig ? INSTAGRAM_TOTAL : tk ? '' : BLENDED;
+  const mixInteractions = ig ? INSTAGRAM_INTERACTIONS : tk ? '' : BLENDED;
   switch (key) {
     case 'gaSpend': return `Coût Google Ads de la période, en euros. ${GA}`;
     case 'gaImpressions': return `Impressions des campagnes Google Ads. ${GA}`;
@@ -54,17 +55,17 @@ export function definition(key: KpiKey, p?: PlatformId | 'all'): string {
     case 'posts': return `${tk ? 'Vidéos' : 'Publications organiques'} publiées sur la période.${all ? ` Somme des ${client.networks.length} réseaux.` : ''} ${notes.posts ?? 'Le nombre vient des publications synchronisées.'} ${SOURCE}`;
     case 'adsDelivered': return 'Nombre d\'annonces ayant eu au moins une impression sur la période.' + (all ? ' Une annonce Meta diffusée sur Facebook et Instagram n’est comptée qu’une fois.' : '');
     case 'impressions': return sentence(mix, tk ? TIKTOK_COHORT : HISTORY, SOURCE);
-    case 'impressionsPerPost': return `Impressions ÷ publications de la période. ${mix}`;
-    case 'videoViews': return ig ? `${INSTAGRAM_VIDEO} Le sous-titre indique le nombre de vidéos publiées sur la période. Une vidéo sans nombre de vues connu n’est pas comptée : le total est alors marqué partiel. Sans vidéo publiée, la variation n’est pas affichée. ${SOURCE}` : sentence(BLENDED, 'Le sous-titre indique le nombre de vidéos publiées sur la période.', tk ? TIKTOK_COHORT : HISTORY);
+    case 'impressionsPerPost': return sentence('Impressions ÷ publications de la période.', mix);
+    case 'videoViews': return ig ? `${INSTAGRAM_VIDEO} Le sous-titre indique le nombre de vidéos publiées sur la période. Une vidéo sans nombre de vues connu n’est pas comptée : le total est alors marqué partiel. Sans vidéo publiée, la variation n’est pas affichée. ${SOURCE}` : sentence(tk ? '' : BLENDED, 'Le sous-titre indique le nombre de vidéos publiées sur la période.', tk ? `${TIKTOK_COHORT} Une vue de vidéo TikTok est une impression : cette carte et « Impressions totales » affichent le même chiffre.` : HISTORY);
     case 'interactions': return sentence('J’aime (ou réactions) + commentaires + partages.', mixInteractions, tk ? TIKTOK_COHORT : HISTORY);
     case 'clicks': return p === 'linkedin' ? 'Clics sur les liens des publicités uniquement : les clics LinkedIn organiques (tous types de clics) sont exclus.' : p === 'instagram' ? 'Clics sur les liens des publicités uniquement (Instagram ne fournit pas de clics organiques sur liens).' : `Clics sur les liens externes. ${all ? `Somme des ${client.networks.length} réseaux ; LinkedIn et Instagram : publicité uniquement.` : BLENDED}`;
-    case 'engagementRate': return `Interactions ÷ impressions × 100. ${mixInteractions}`;
+    case 'engagementRate': return sentence('Interactions ÷ impressions × 100.', mixInteractions);
     case 'spend': return `Budget média dépensé. ${PAID_ONLY}${p === 'facebook' || p === 'instagram' ? ' Budget Meta Ads réparti selon la plateforme de diffusion.' : ''}`;
     case 'cpm': return `Budget ÷ impressions payantes × 1 000. ${PAID_ONLY} Une baisse est favorable.`;
     case 'cpc': return `Budget ÷ clics payants sur les liens. ${PAID_ONLY} Une baisse est favorable.`;
     case 'cpe': return sentence('Budget média ÷ interactions totales (j’aime ou réactions + commentaires + partages, organique et payant confondus, comme la carte d’interactions).',
       all && 'Total : budget des réseaux sociaux ÷ interactions de ces mêmes réseaux (YouTube, dont le budget n’est pas compté ici, est exclu).',
-      tk && TIKTOK_COHORT, 'Le budget est payant uniquement (connecteurs Ads). Sans budget sur la période, pas de CPE. Une baisse est favorable.');
+      (all || tk) && client.networks.includes('tiktok') && 'TikTok : son budget suit les jours de diffusion, ses interactions sont celles des vidéos publiées sur la période ; sans vidéo publiée sur la période, il est écarté du total et celui-ci est marqué partiel.', 'Le budget est payant uniquement (connecteurs Ads). Sans budget sur la période, pas de CPE. Une baisse est favorable.');
     case 'cpv': return `Budget média ÷ vues des vidéos sponsorisées (2 secondes ou plus). ${PAID_ONLY} Une baisse est favorable.`;
     case 'chartFormats': return `Nombre de publications de la période par format (photo, vidéo / reel, ${p === 'facebook' ? 'album' : 'carrousel'}${p === 'linkedin' ? ', document' : ''}). ${SOURCE}`;
     case 'chartAudience': return 'Abonnés sur les dates du sélecteur, du premier au dernier jour de la période. Les boutons Semaine (période d’au moins 14 jours), Mois (au moins 60 jours) et Année (au moins 730 jours) choisissent le pas des points ; sous 14 jours, un point par jour. Par défaut, la vue la plus fine qui reste sous 30 points. Chaque point prend la dernière valeur disponible à sa date ou avant (jamais de date future ni de zéro inventé : vide avant le premier relevé) ; un point creux est une valeur estimée.';

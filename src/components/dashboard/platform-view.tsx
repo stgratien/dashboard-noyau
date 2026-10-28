@@ -214,6 +214,12 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
   };
   const tk = p === "tiktok";
   const D = (k: KpiKey) => definition(k, p);
+  // TikTok : les chiffres sont ceux des vidéos publiées sur la période. Sans vidéo publiée ils valent zéro (la diffusion payante de vidéos plus anciennes n'y entre pas) :
+  // aucune variation n'est affichée, elle se lirait comme un effondrement, et une note le dit.
+  const noTikTokVideo = tk && t.videos === 0;
+  const cohortNote = (key: string) =>
+    [coverageDetails(t, key).note, noTikTokVideo ? "Aucune vidéo publiée sur la période" : ""].filter(Boolean).join(" · ") || undefined;
+  const cohortDelta = (key: keyof typeof t & string) => (noTikTokVideo ? undefined : comparableDelta(t, o, key));
   // Stories (Instagram uniquement, jamais ajoutées au Global : les impressions du compte les comprennent déjà).
   const st = storiesTotals(data.stories, data.storyPulls, period, { failed: data.storiesFailed }),
     so = storiesTotals(data.stories, data.storyPulls, comparison, { failed: data.storiesFailed });
@@ -269,17 +275,18 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
       <BigSection title="Visibilité">
         <Kpi
           {...coverageDetails(t, "impressions", D("impressions"))}
+          note={cohortNote("impressions")}
           label="Impressions totales"
           prev={shown(o, fmt(o.impressions))}
           value={shown(t, fmt(t.impressions))}
-          d={comparableDelta(t, o, "impressions")}
+          d={cohortDelta("impressions")}
         />
         <Kpi
           {...coverageDetails(t, "impressionsPerPost", D("impressionsPerPost"))}
           label="Impressions moy. / post"
           prev={shown(o, fmt(o.impressionsPerPost))}
           value={shown(t, fmt(t.impressionsPerPost))}
-          d={comparableDelta(t, o, "impressionsPerPost")}
+          d={cohortDelta("impressionsPerPost")}
         />
         <Kpi
           {...coverageDetails(t, "videoViews", D("videoViews"))}
@@ -298,18 +305,19 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
       <BigSection title="Engagement">
         <Kpi
           {...coverageDetails(t, "interactions", D("interactions"))}
+          note={cohortNote("interactions")}
           label="Interactions totales"
           prev={shown(o, fmt(o.interactions))}
           value={shown(t, fmt(t.interactions))}
-          d={comparableDelta(t, o, "interactions")}
+          d={cohortDelta("interactions")}
         />
         <Kpi
           {...coverageDetails(t, "engagementRate", D("engagementRate"))}
           label="Taux d'engagement (sur impressions)"
           prev={shown(o, pct(o.engagementRate))}
-          pts={t.engagementRate != null && o.engagementRate != null ? t.engagementRate - o.engagementRate : undefined}
+          pts={t.engagementRate != null && o.engagementRate != null && !noTikTokVideo ? t.engagementRate - o.engagementRate : undefined}
           value={shown(t, pct(t.engagementRate))}
-          d={comparableDelta(t, o, "engagementRate")}
+          d={cohortDelta("engagementRate")}
         />
         <Kpi
           tooltip={D("clicks")}

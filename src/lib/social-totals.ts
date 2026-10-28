@@ -138,16 +138,21 @@ export function realBlendedTotals(
     const rows = own.filter((d) => d.source === paid && igManualDays.has(d.day));
     return rows.length !== igManualDays.size ? null : nullableSum(rows.map((d) => d.metrics[field]));
   };
+  // TikTok : les vues et interactions d'une vidéo comprennent déjà celles de sa promotion (post boosté : toutes les annonces TikTok du client sont rattachées à une publication, la diffusion payante
+  // d'une vidéo est comptée dans ses vues). Ajouter les chiffres de TikTok Ads les compterait deux fois ; le payant ne sert ici qu'au budget et aux coûts (CPM, CPV, CPE).
+  const tiktokPromoted = (field: string) =>
+    p === "tiktok" && ["impressions", "videoViews", "likes", "comments", "shares"].includes(field);
   const blended = (field: string) => {
     const a = organicSum(field),
-      b =
-        p === "instagram" && ["impressions", "videoViews", "likes", "comments", "shares"].includes(field)
+      b = tiktokPromoted(field)
+        ? 0
+        : p === "instagram" && ["impressions", "videoViews", "likes", "comments", "shares"].includes(field)
           ? igPaidOnManual(field)
           : sum(paid, field);
     if (a == null || b == null)
       missing[field] = [a == null ? `${p}:organic` : "", b == null ? `${p}:paid` : ""].filter(Boolean);
-    // Instagram : le payant est déjà dans les chiffres du compte ; sans organique il n'y a rien à afficher (jamais « 0 »).
-    if (p === "instagram" && a == null) return null;
+    // Instagram : le payant est déjà dans les chiffres du compte ; sans organique il n'y a rien à afficher (jamais « 0 »). TikTok : sans vidéos publiées connues, pas de payant seul à la place.
+    if ((p === "instagram" || tiktokPromoted(field)) && a == null) return null;
     return a == null ? b : b == null ? a : a + b;
   };
   const impressions = blended("impressions");
@@ -278,14 +283,17 @@ export function realAllNetworkTotals(totals: RealTotals[]): RealTotals {
     b: "interactions" | "paidImpressions" | "impressions",
     key: string,
     m = 1,
+    skip: (t: RealTotals) => boolean = () => false,
   ) => {
-    const available = totals.filter((t) => t[a] != null && t[b] != null);
+    const available = totals.filter((t) => t[a] != null && t[b] != null && !skip(t));
     missing[key] = [
       ...new Set(
         totals.flatMap((t) => [
           ...bare(t, [a, b]),
           ...(t.missing[a] ?? []),
           ...(t.missing[b] ?? []),
+          // Un réseau écarté du ratio qui a pourtant une valeur à y mettre rend le total partiel.
+          ...(skip(t) && (t[a] ?? 0) > 0 ? [t.platform] : []),
         ]),
       ),
     ];
@@ -308,7 +316,8 @@ export function realAllNetworkTotals(totals: RealTotals[]): RealTotals {
     organicInteractions: null,
     adKeys,
     adsDelivered: adKeys?.length ?? null,
-    cpe: ratio("spend", "interactions", "cpe") || null,
+    // TikTok : son budget suit les jours de diffusion, ses interactions sont celles des vidéos publiées sur la période ; sans vidéo publiée (interactions à 0) le budget n'aurait rien en face et gonflerait le CPE : il en est écarté (total partiel).
+    cpe: ratio("spend", "interactions", "cpe", 1, (t) => t.platform === "tiktok" && t.interactions === 0) || null,
     cpv: null,
     paidImpressions: sum("paidImpressions"),
     videos: sum("videos"),

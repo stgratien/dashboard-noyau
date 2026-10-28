@@ -26,10 +26,17 @@ describe('real Windsor aggregates', () => {
     expect(totals[0]?.cpc).toBe(4);
   });
   it('never replaces an absent source or day with zero', () => {
-    const t = realBlendedTotals('tiktok', days.filter(d => d.source !== 'tiktok_organic'), posts, period, []);
-    expect(t.impressions).toBe(8000);
-    expect(t.missing['impressions']).toEqual(['tiktok:organic']);
-    expect(realAllNetworkTotals([t]).impressions).toBe(8000);
+    const t = realBlendedTotals('facebook', days.filter(d => d.source !== 'facebook_organic'), posts, period, []);
+    const paidImpressions = days.find(d => d.platform === 'facebook' && d.source === 'facebook')?.metrics['impressions'];
+    expect(t.impressions).toBe(paidImpressions);
+    expect(t.missing['impressions']).toEqual(['facebook:organic']);
+    expect(realAllNetworkTotals([t]).impressions).toBe(paidImpressions);
+    // TikTok : sans vidéos publiées connues, le payant ne remplace pas le total (il est déjà compris dans les vues des vidéos).
+    const tiktok = realBlendedTotals('tiktok', days.filter(d => d.source !== 'tiktok_organic'), posts, period, []);
+    expect(tiktok.impressions).toBeNull();
+    expect(tiktok.interactions).toBeNull();
+    expect(tiktok.missing['impressions']).toEqual(['tiktok:organic']);
+    expect(realAllNetworkTotals([tiktok]).impressions).toBeNull();
     expect(realBlendedTotals('facebook', days, posts, { start: period.start, end: '2025-09-16' }, []).spend).toBeNull();
   });
   it('uses uppercase suffixes, decimal commas and adjacent euros', () => {
@@ -98,9 +105,77 @@ describe('real Windsor aggregates', () => {
   it('uses TikTok published-video lifetime metrics on all periods, not daily account zeros', () => {
     const t = realBlendedTotals('tiktok',days, [...posts,...posts],period,[]);
     expect(t.posts).toBe(1);
-    expect(t.impressions).toBe(4000+8000);
-    expect(t.videoViews).toBe(4000+100);
-    expect(t.interactions).toBe(30);
+    // Les annonces TikTok sont des posts boostés : leurs vues et interactions sont déjà dans celles des vidéos, jamais ajoutées une seconde fois.
+    expect(t.impressions).toBe(4000);
+    expect(t.videoViews).toBe(4000);
+    expect(t.interactions).toBe(15);
+    expect(t.missing['impressions']).toBeUndefined();
+    // Le payant reste la base du budget et des coûts : 20 € pour 8 000 impressions payantes.
+    expect(t.spend).toBe(20);
+    expect(t.cpm).toBe(2.5);
+    expect(t.engagementRate).toBeCloseTo(15 / 4000 * 100, 6);
+  });
+  it('TikTok: the promoted delivery is already in the videos\' own figures, over a whole period and in Global', () => {
+    const period = { start: '2025-07-01', end: '2025-07-31' };
+    const video = (id: string, day: string, impressions: number, likes: number) => ({ platform: 'tiktok', post_id: id, published_at: `${day}T10:00:00Z`, title: id, format: 'Vidéo', permalink: '', thumbnail_path: null, metrics: { impressions, likes, comments: 2, shares: 1, videoViews: 0 } });
+    // Deux vidéos boostées (leurs vues dépassent un peu les impressions payantes : vues organiques en plus) et une vidéo non boostée.
+    const posts: SocialPost[] = [video('a', '2025-07-03', 90_000, 300), video('b', '2025-07-21', 120_000, 900), video('c', '2025-07-25', 800, 20)];
+    const days: SocialDay[] = [];
+    for (let d = dayNumber(period.start); d <= dayNumber(period.end); d++) {
+      const day = isoFromDay(d);
+      days.push({ platform: 'tiktok', source: 'tiktok_organic', day, followers_estimated: false, metrics: { postsAvailable: 1 } });
+      // 200 000 impressions payantes sur le mois (≈ les vues des deux vidéos boostées), 150 € dépensés, 1 000 j'aime payants.
+      days.push({ platform: 'tiktok', source: 'tiktok', day, followers_estimated: false, metrics: { impressions: 200_000 / 31, spend: 150 / 31, videoViews: 130_000 / 31, likes: 1_000 / 31, comments: 0, shares: 0, linkClicks: 0 } });
+    }
+    const t = realBlendedTotals('tiktok', days, posts, period, []);
+    expect(t.impressions).toBe(210_800);
+    expect(t.videoViews).toBe(210_800);
+    expect(t.interactions).toBe(300 + 900 + 20 + 3 * 3);
+    expect(t.posts).toBe(3);
+    expect(t.videos).toBe(3);
+    expect(t.impressionsPerPost).toBeCloseTo(210_800 / 3, 6);
+    expect(t.spend).toBeCloseTo(150, 6);
+    expect(t.cpm).toBeCloseTo((150 / 200_000) * 1000, 6);
+    expect(t.cpv).toBeCloseTo(150 / 130_000, 6);
+    expect(t.missing['impressions']).toBeUndefined();
+    expect(t.missing['interactions']).toEqual([]);
+    const global = realAllNetworkTotals([t]);
+    expect(global.impressions).toBe(210_800);
+    expect(global.interactions).toBe(t.interactions);
+    // Une période sans aucune vidéo publiée : zéro (publications connues), même si des annonces ont diffusé des vidéos plus anciennes.
+    const empty = realBlendedTotals('tiktok', days, [], period, []);
+    expect(empty.impressions).toBe(0);
+    expect(empty.videoViews).toBe(0);
+    expect(empty.engagementRate).toBeNull();
+    expect(empty.spend).toBeCloseTo(150, 6);
+    // Un chiffre inconnu sur une vidéo rend le total inconnu : il ne retombe pas sur le chiffre payant.
+    const unknown = realBlendedTotals('tiktok', days, [{ ...(posts[0] as SocialPost), metrics: { impressions: 90_000, likes: null, comments: 2, shares: 1 } }], period, []);
+    expect(unknown.impressions).toBe(90_000);
+    expect(unknown.interactions).toBeNull();
+    expect(unknown.missing['likes']).toEqual(['tiktok:organic']);
+  });
+  it('Global CPE leaves TikTok out when it has a budget but no published video, and flags the total partial', () => {
+    const period = { start: '2025-09-15', end: '2025-09-15' };
+    const posts: SocialPost[] = PLATFORMS.filter(({ id }) => id !== 'tiktok').map(({ id }) => ({ platform: id, post_id: id, published_at: `${period.end}T12:00:00Z`, title: 'Test', format: 'Post', permalink: '', thumbnail_path: null, metrics: { impressions: 4000, likes: 10, comments: 2, shares: 3 } }));
+    const days: SocialDay[] = PLATFORMS.flatMap(({ id }) => {
+      const organic = id === 'facebook' ? 'facebook_organic' : id === 'instagram' ? 'instagram' : `${id}_organic`;
+      const paid = id === 'instagram' ? 'facebook' : id;
+      return [organic, paid].map((source, j) => ({ platform: id, source, day: period.end, followers_estimated: false, metrics: { postsAvailable: 1, impressions: 1000 * (j + 1), likes: 10, comments: 2, shares: 3, videoViews: 100, linkClicks: 5, spend: j ? 20 : 0 } }));
+    });
+    const totals = PLATFORMS.map(({ id }) => realBlendedTotals(id, days, posts, period, []));
+    const tiktok = totals.find(t => t.platform === 'tiktok');
+    expect(tiktok?.interactions).toBe(0);
+    expect(tiktok?.spend).toBe(20);
+    expect(tiktok?.cpe).toBeNull();
+    const others = totals.filter(t => t.platform !== 'tiktok');
+    const global = realAllNetworkTotals(totals);
+    expect(global.cpe).toBeCloseTo(others.reduce((a, t) => a + (t.spend ?? 0), 0) / others.reduce((a, t) => a + (t.interactions ?? 0), 0), 9);
+    expect(global.missing['cpe']).toContain('tiktok');
+    // Avec une vidéo publiée, TikTok revient dans le calcul.
+    const withVideo = [...posts, { platform: 'tiktok', post_id: 'tiktok', published_at: `${period.end}T12:00:00Z`, title: 'Test', format: 'Vidéo', permalink: '', thumbnail_path: null, metrics: { impressions: 4000, likes: 10, comments: 2, shares: 3 } }];
+    const all = PLATFORMS.map(({ id }) => realBlendedTotals(id, days, withVideo, period, []));
+    expect(realAllNetworkTotals(all).missing['cpe']).not.toContain('tiktok');
+    expect(realAllNetworkTotals(all).cpe).toBeCloseTo(all.reduce((a, t) => a + (t.spend ?? 0), 0) / all.reduce((a, t) => a + (t.interactions ?? 0), 0), 9);
   });
   it('carries last known followers forward but never uses a future snapshot', () => {
     const snapshots = [{platform:'linkedin',source:'linkedin_organic',day:'2025-09-14',metrics:{followers:123},followers_estimated:true},{platform:'linkedin',source:'linkedin_organic',day:'2025-09-16',metrics:{followers:999},followers_estimated:false}];
