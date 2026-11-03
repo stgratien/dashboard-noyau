@@ -1,4 +1,5 @@
-import { useContext, type ReactNode } from "react";
+import { useContext, useState, type ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { client } from "@/lib/client";
 import type { PlatformId } from "@/lib/dashboard-data";
@@ -79,10 +80,15 @@ function Row({ row, max, compared, forReport }: { row: AdAudienceViewRow; max: n
   );
 }
 
+/** À l'écran, chaque panneau montre d'abord ses 10 premières valeurs (des panneaux de 10 et de 50 lignes côte à côte seraient d'inégale hauteur) ; un bouton montre toutes celles qui sont gardées. */
+const SCREEN_ROWS = 10;
+
 function AdAudiencePanel({ panel, limit, info }: { panel: AdAudiencePanelView; limit: number | undefined; info: string }) {
+  const [open, setOpen] = useState(false);
   const forReport = limit !== undefined;
   const cut = forReport && panel.rows.length > limit;
-  const rows = cut ? panel.rows.slice(0, limit) : panel.rows;
+  const foldable = !forReport && panel.rows.length > SCREEN_ROWS;
+  const rows = cut ? panel.rows.slice(0, limit) : foldable && !open ? panel.rows.slice(0, SCREEN_ROWS) : panel.rows;
   const title = cut ? `${panel.title} (top ${limit})` : panel.title;
   const max = rows.reduce((m, r) => Math.max(m, r.impressions), 0);
   // Un panneau sans valeur n'est pas capturé : une image « Donnée non disponible » n'a rien à faire dans le rapport (son emplacement est retiré).
@@ -96,6 +102,8 @@ function AdAudiencePanel({ panel, limit, info }: { panel: AdAudiencePanelView; l
         <p className="text-sm text-muted-foreground">Aucune diffusion sur la période</p>
       ) : (
         <>
+          {/* La période comparée sans relevé : dit dans le panneau lui-même (donc dans l'image du rapport), la légende « vs » de la diapositive ne doit pas laisser croire à une comparaison. */}
+          {!compared && <p className="mb-2 text-xs text-muted-foreground">Comparaison non disponible : la période comparée n’est pas relevée.</p>}
           {/* Légende des colonnes : toujours dans l'image du rapport (sans classe de fenêtre) ; à l'écran, sur téléphone, chaque cellule porte sa propre légende. */}
           <div className={cn("mb-2 justify-end gap-x-3 text-[11px] text-muted-foreground", forReport ? "flex" : "hidden sm:flex")}>
             <span className="w-[5.5rem] text-right">Impressions</span>
@@ -107,9 +115,14 @@ function AdAudiencePanel({ panel, limit, info }: { panel: AdAudiencePanelView; l
               <Row key={row.label} row={row} max={max} compared={compared} forReport={forReport} />
             ))}
           </ul>
-          {panel.returned != null && panel.returned > rows.length && (
+          {foldable && (
+            <Button type="button" variant="outline" size="sm" data-export-hide className="mt-3" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+              {open ? "Réduire" : `Afficher les ${panel.rows.length} valeurs`}
+            </Button>
+          )}
+          {panel.returned != null && panel.returned > (forReport ? rows.length : panel.rows.length) && (
             <p className="mt-3 text-xs text-muted-foreground">
-              {rows.length} valeurs les plus diffusées sur {fmt(panel.returned)}
+              {forReport ? rows.length : panel.rows.length} valeurs les plus diffusées sur {fmt(panel.returned)}
             </p>
           )}
         </>
@@ -135,7 +148,7 @@ export function AdAudienceSection({ data, p, period, comparison }: ViewPeriods &
       <SectionTitle title="Audience sponsorisée" className="border-b pb-1 text-lg font-medium text-foreground" />
       <TabNotes notes={[note, view.state === "ready" ? ABOUT : null, view.state === "ready" && !view.comparedAny ? noComparison() : null]} />
       {view.state === "ready" && (
-        <div className={cn("grid gap-6", reportLimit !== undefined ? "grid-cols-2" : "grid-cols-1 lg:grid-cols-2")}>
+        <div className={cn("grid items-start gap-6", reportLimit !== undefined ? "grid-cols-2" : "grid-cols-1 lg:grid-cols-2")}>
           {view.panels.map((panel) => (
             <AdAudiencePanel key={panel.dimension} panel={panel} limit={reportLimit} info={definition("adAudience", p)} />
           ))}

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { AdAudienceSection } from "../components/dashboard/ad-audience-section";
 import { ReportRowLimit } from "../components/dashboard/common";
 import { formatNumber } from "../lib/dashboard-format";
@@ -80,6 +80,40 @@ describe("AdAudienceSection", () => {
     const { container } = render(<AdAudienceSection data={only} p="linkedin" period={period} comparison={comparison} />);
     expect(screen.getByText(/La période comparée n’a pas d’audience sponsorisée relevée/)).toBeTruthy();
     expect(container.textContent).not.toMatch(/vs /);
+  });
+
+  it("shows the first 10 values on screen, with a button for all the stored ones, and keeps panels at their own height", () => {
+    const many = Array.from({ length: 14 }, (_, i) => value("company", period, `Company ${i}`, 1000 - i, 1));
+    const rich: AdAudienceData = { failed: false, periods: [reading("company", period, 209)], rows: many };
+    const { container } = render(<AdAudienceSection data={rich} p="linkedin" period={period} comparison={comparison} />);
+    const panel = container.querySelector('[data-report-image="adAudience-company"]') as HTMLElement;
+    expect(panel.querySelectorAll("li")).toHaveLength(10);
+    const button = within(panel).getByRole("button", { name: "Afficher les 14 valeurs" });
+    expect(button.closest("[data-export-hide]")).not.toBeNull();
+    // The count line speaks of the stored values (14 of 209), not of the 10 on screen.
+    expect(within(panel).getByText(/14 valeurs les plus diffusées sur/)).toBeTruthy();
+    fireEvent.click(button);
+    expect(panel.querySelectorAll("li")).toHaveLength(14);
+    fireEvent.click(within(panel).getByRole("button", { name: "Réduire" }));
+    expect(panel.querySelectorAll("li")).toHaveLength(10);
+    // Panels are as tall as their own content: no empty frame stretched to the tallest neighbour.
+    expect(container.querySelector(".grid")?.className).toContain("items-start");
+    // No button for a panel that fits.
+    const small = render(<AdAudienceSection data={data} p="linkedin" period={period} comparison={comparison} />);
+    expect(within(small.container).queryByRole("button")).toBeNull();
+  });
+
+  it("says inside the panel, so also in the report image, that the compared period has no reading", () => {
+    const only = { ...data, periods: [reading("function", period)], rows: [value("function", period, "Engineering", 4000, 80)] };
+    const { container } = render(<AdAudienceSection data={only} p="linkedin" period={period} comparison={comparison} />);
+    const panel = container.querySelector('[data-report-image="adAudience-function"]') as HTMLElement;
+    expect(within(panel).getByText(/Comparaison non disponible/)).toBeTruthy();
+    expect(panel.closest("[data-export-hide]")).toBeNull();
+    expect(panel.querySelector("[data-export-hide]")).toBeNull();
+    // With a reading for the compared period the sentence is not there.
+    const both = render(<AdAudienceSection data={data} p="linkedin" period={period} comparison={comparison} />);
+    const withBoth = both.container.querySelector('[data-report-image="adAudience-function"]') as HTMLElement;
+    expect(within(withBoth).queryByText(/Comparaison non disponible/)).toBeNull();
   });
 
   it("renders nothing for a network whose ads do not provide it", () => {
