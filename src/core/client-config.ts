@@ -83,9 +83,10 @@ export interface ClientInput {
    * Intégrations hors Windsor (scripts nocturnes) et onglet Global. Défaut : Google Ads et YouTube activés ; `global` (vue « tous réseaux ») affiché
    * dès qu'il y a plusieurs onglets réseaux, masqué sinon (le premier onglet réseau s'ouvre alors en premier). `adAudience` (défaut : désactivé) ajoute à l'onglet
    * LinkedIn l'« Audience sponsorisée » : les découpages démographiques des annonces LinkedIn relevés par Windsor pour des périodes calendaires entières
-   * (nécessite la source `linkedin` et la migration 0015).
+   * (nécessite la source `linkedin` et la migration 0015). `pageAudience` (défaut : désactivé) ajoute à l'onglet LinkedIn les « Visiteurs de la page » : les pages vues
+   * de la page par taille d'entreprise du visiteur, relevées par Windsor pour des périodes calendaires entières (nécessite la source `linkedin_organic` et la migration 0016).
    */
-  features?: { googleAds?: boolean; youtube?: boolean; global?: boolean; adAudience?: boolean };
+  features?: { googleAds?: boolean; youtube?: boolean; global?: boolean; adAudience?: boolean; pageAudience?: boolean };
   /** Rapprochement annonce-publication par le nom de l'annonce : mots propres au client à ignorer en plus de la liste de base (« paris », nom de l'événement...). */
   ads?: { extraStopWords?: string[] };
   /** Rapport Google Slides. Sans `google`, le bouton « Générer un reporting » reste inactif. */
@@ -147,7 +148,7 @@ export interface Client {
   events: { editions: EventEdition[]; groupLabel: string };
   sources: WindsorSource[];
   networks: PlatformId[];
-  features: { googleAds: boolean; youtube: boolean; global: boolean; adAudience: boolean };
+  features: { googleAds: boolean; youtube: boolean; global: boolean; adAudience: boolean; pageAudience: boolean };
   ads: { extraStopWords: string[] };
   report: {
     google: { clientId: string; apiKey: string; appId: string; templateId: string } | null;
@@ -192,6 +193,8 @@ export function defineClient(input: ClientInput): Client {
   }
   if (input.features?.adAudience && !input.sources.includes("linkedin"))
     throw new Error("Configuration client : features.adAudience (audience sponsorisée) demande la source Windsor « linkedin » (LinkedIn Ads).");
+  if (input.features?.pageAudience && !input.sources.includes("linkedin_organic"))
+    throw new Error("Configuration client : features.pageAudience (visiteurs de la page) demande la source Windsor « linkedin_organic » (page LinkedIn).");
   const b = input.brand, r = input.report ?? {};
   return {
     id: input.id,
@@ -214,7 +217,7 @@ export function defineClient(input: ClientInput): Client {
     events: { editions, groupLabel: input.events?.groupLabel ?? "Éditions" },
     sources: input.sources,
     networks: ALL_PLATFORMS.filter((p) => networks.includes(p)),
-    features: { googleAds: input.features?.googleAds ?? true, youtube: input.features?.youtube ?? true, global: input.features?.global ?? networks.length > 1, adAudience: input.features?.adAudience ?? false },
+    features: { googleAds: input.features?.googleAds ?? true, youtube: input.features?.youtube ?? true, global: input.features?.global ?? networks.length > 1, adAudience: input.features?.adAudience ?? false, pageAudience: input.features?.pageAudience ?? false },
     ads: { extraStopWords: input.ads?.extraStopWords ?? [] },
     report: {
       google: r.google ?? null,

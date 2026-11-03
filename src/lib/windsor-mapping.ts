@@ -2,6 +2,7 @@ import type { PlatformId } from "@/lib/dashboard-data";
 import type { WindsorSource } from "@/lib/windsor-config";
 import { SOURCE_PLATFORMS } from "@/core/client-config";
 import { AD_AUDIENCE_DIMENSIONS, adAudienceKey, type AdAudienceDimension, type AdAudienceRow } from "@/lib/ad-audience";
+import { PAGE_AUDIENCE_DIMENSIONS, pageAudienceKey, type PageAudienceDimension, type PageAudienceRow } from "@/lib/page-audience";
 export type RawRow = Record<string, unknown>;
 export type Metrics = Record<string, number | null>;
 export const numberValue = (v: unknown): number | null => v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v);
@@ -64,7 +65,7 @@ export type AudienceSpec = { dimension: string; label: string; value: string; un
 export const AUDIENCE_SPECS: Partial<Record<WindsorSource, AudienceSpec[]>> = {
   instagram: [{ dimension: "genderAge", label: "audience_gender_age_name", value: "audience_gender_age_size", unit: "count" }, { dimension: "country", label: "audience_country_name", value: "audience_country_size", unit: "count" }, { dimension: "city", label: "city", value: "audience_city_size", unit: "count" }],
   tiktok_organic: [{ dimension: "gender", label: "audience_genders_gender", value: "audience_genders_percentage", unit: "percent" }, { dimension: "age", label: "audience_ages_age", value: "audience_ages_percentage", unit: "percent" }, { dimension: "country", label: "audience_countries_country", value: "audience_countries_percentage", unit: "percent" }],
-  linkedin_organic: [{ dimension: "industry", label: "industry_follower_type", value: "industry_follower_counts", unit: "count" }, { dimension: "function", label: "function_follower_type", value: "function_follower_counts", unit: "count" }, { dimension: "seniority", label: "seniority_follower_type", value: "seniority_follower_counts", unit: "count" }, { dimension: "country", label: "country_follower_name", value: "country_follower_counts", unit: "count" }],
+  linkedin_organic: [{ dimension: "industry", label: "industry_follower_type", value: "industry_follower_counts", unit: "count" }, { dimension: "function", label: "function_follower_type", value: "function_follower_counts", unit: "count" }, { dimension: "seniority", label: "seniority_follower_type", value: "seniority_follower_counts", unit: "count" }, { dimension: "country", label: "country_follower_name", value: "country_follower_counts", unit: "count" }, { dimension: "companySize", label: "staff_follower_range", value: "staff_follower_counts", unit: "count" }],
   // Facebook : les champs « page_fans_* » n'existent que par jour (date) et avec « page_fans_likes ». Le sexe et l'âge ne sont pas fournis par ce compte.
   facebook_organic: [
     { dimension: "country", label: "page_fans_country_name", value: "page_fans_country_value", unit: "count", extra: ["date", "page_fans_likes"] },
@@ -214,5 +215,47 @@ export function nextAdAudiencePull(
   for (const period of periods)
     for (const { key } of AD_AUDIENCE_DIMENSIONS)
       if (adAudienceDue(states.get(adAudienceKey(platform, key, period.start, period.end)), now)) return { dimension: key, start: period.start, end: period.end };
+  return null;
+}
+
+/**
+ * Visiteurs de la page (connecteur « linkedin_organic », page LinkedIn) : une requête par découpage, sur la période exacte, avec le seul champ de profil et la mesure
+ * (ni `date`, ni compte, qui feraient éclater les lignes). Ce sont des PAGES VUES par tranche d'effectif de l'entreprise du visiteur, pas des visiteurs uniques. Le réseau peut renvoyer
+ * une valeur par période ou par jour : les lignes de même libellé sont additionnées. Les noms de champs sont ceux du connecteur : un champ refusé fait échouer la lecture
+ * du découpage, qui sera retentée plus tard.
+ */
+export const PAGE_AUDIENCE_FIELD: Record<PageAudienceDimension, { label: string; value: string }> = {
+  companySize: { label: "page_staff_count_range", value: "page_views_by_staff_count_range" },
+};
+export const pageAudienceFields = (dimension: PageAudienceDimension) => [PAGE_AUDIENCE_FIELD[dimension].label, PAGE_AUDIENCE_FIELD[dimension].value].join(",");
+/** Au plus ce nombre de valeurs par découpage et par période est stocké (les plus vues). */
+export const PAGE_AUDIENCE_MAX_ROWS = 50;
+
+export type PageAudienceValues = { rows: PageAudienceRow[]; returned: number; totalViews: number };
+/**
+ * Valeurs d'un découpage : libellés bruts nettoyés (le libellé du réseau est gardé tel quel, la mise en français se fait à l'affichage), doublons additionnés, lignes sans libellé ou sans
+ * page vue ignorées (jamais de zéro inventé), puis classement par pages vues (libellé à égalité) limité à `max`. `returned` et le total portent sur TOUTES les valeurs lues, avant la limite.
+ */
+export function pageAudienceValues(dimension: PageAudienceDimension, rows: RawRow[], max = PAGE_AUDIENCE_MAX_ROWS): PageAudienceValues {
+  const { label: labelField, value: valueField } = PAGE_AUDIENCE_FIELD[dimension];
+  const merged = new Map<string, number>();
+  for (const row of rows) {
+    const label = String(row[labelField] ?? "").replace(/\s+/g, " ").trim();
+    const views = numberValue(row[valueField]);
+    if (!label || views == null || views <= 0) continue;
+    merged.set(label, (merged.get(label) ?? 0) + views);
+  }
+  const all = [...merged].map(([label, views]) => ({ label, views }));
+  const ranked = [...all].sort((a, b) => b.views - a.views || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
+  return { rows: ranked.slice(0, Math.max(0, max)), returned: all.length, totalViews: all.reduce((sum, r) => sum + r.views, 0) };
+}
+
+/** Prochain relevé de visiteurs de la page à faire : mêmes règles que l'audience sponsorisée (adAudienceDue, délais, trimestres et éditions terminés du plus récent au plus ancien), un seul découpage pour l'instant. */
+export function nextPageAudiencePull(
+  periods: { start: string; end: string }[], states: Map<string, AdAudienceState>, now: Date, platform = "linkedin",
+): { dimension: PageAudienceDimension; start: string; end: string } | null {
+  for (const period of periods)
+    for (const { key } of PAGE_AUDIENCE_DIMENSIONS)
+      if (adAudienceDue(states.get(pageAudienceKey(platform, key, period.start, period.end)), now)) return { dimension: key, start: period.start, end: period.end };
   return null;
 }

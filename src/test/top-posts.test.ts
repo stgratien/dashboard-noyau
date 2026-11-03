@@ -217,7 +217,7 @@ describe('audience panels', () => {
     const empty = audienceBreakdowns([], 'instagram');
     expect(audiencePanels('instagram', empty).map(x => x.key)).toEqual(['gender', 'age', 'country', 'city']);
     expect(audiencePanels('tiktok', audienceBreakdowns([], 'tiktok')).map(x => x.key)).toEqual(['gender', 'age', 'country']);
-    expect(audiencePanels('linkedin', audienceBreakdowns([], 'linkedin')).map(x => x.key)).toEqual(['country', 'industry', 'function', 'seniority']);
+    expect(audiencePanels('linkedin', audienceBreakdowns([], 'linkedin')).map(x => x.key)).toEqual(['country', 'industry', 'function', 'seniority', 'companySize']);
   });
   it('shows country codes as French names and keeps any other label as it is', () => {
     expect(countryName('FR')).toBe('France');

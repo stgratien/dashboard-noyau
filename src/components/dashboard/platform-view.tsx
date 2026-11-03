@@ -7,6 +7,8 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PostLink } from "@/components/post-link";
 import { AdAudienceSection } from "./ad-audience-section";
+import { client } from "@/lib/client";
+import { PageAudienceSection } from "./page-audience-section";
 import { cn } from "@/lib/utils";
 import { yesterdayISO, type Period } from "@/lib/dashboard-periods";
 import { AUDIENCE_VIEW_LABELS, audienceDefaultView, audienceSeries, audienceViews, type AudienceView } from "@/lib/social-followers";
@@ -656,6 +658,7 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
       </section>
       <AudienceSection rows={data.audience} p={p} />
       <AdAudienceSection data={data.adAudience} p={p} period={period} comparison={comparison} />
+      <PageAudienceSection data={data.pageAudience} p={p} period={period} comparison={comparison} />
     </div>
   );
 }
@@ -954,6 +957,9 @@ export function Bars({
   );
 }
 
+/** Clé de rapport d'un panneau d'abonnés. Les tailles d'entreprise ne sont capturées que pour un client qui les met dans son rapport (même option que les visiteurs de la page) : sans l'emplacement dans son modèle, chaque rapport signalerait un emplacement absent. */
+const reportKeyProps = (key: string) => (key === "companySize" && !client.features.pageAudience ? {} : { reportKey: `audience-${key}` });
+
 export function AudienceSection({ rows, p }: { rows: SocialData["audience"]; p: PlatformId }) {
   const a = audienceBreakdowns(
     rows.map((r) => ({ ...r, value: Number(r.value) })),
@@ -975,7 +981,7 @@ export function AudienceSection({ rows, p }: { rows: SocialData["audience"]; p: 
         <div className={cn("grid gap-6", forReport ? "grid-cols-2" : "grid-cols-1 lg:grid-cols-2")}>
           {audiencePanels(p, a).map((x) => (
             // Sexe et tranches d'âge sont des répartitions complètes (la somme fait 100 %) : jamais raccourcies dans le rapport.
-            <Bars key={x.key} title={x.title} info={definition(x.info, p)} items={x.items} reportKey={`audience-${x.key}`} complete={x.key === "gender" || x.key === "age"} {...(x.withUnit ? { unit } : {})} />
+            <Bars key={x.key} title={x.title} info={definition(x.info, p)} items={x.items} {...reportKeyProps(x.key)} complete={x.key === "gender" || x.key === "age"} {...(x.withUnit ? { unit } : {})} />
           ))}
         </div>
       )}

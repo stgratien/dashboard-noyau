@@ -77,6 +77,13 @@ describe('loadSocialData: organic ↔ paid linking', () => {
     expect(r.adAudience).toEqual({ rows: [], periods: [], failed: false });
   });
 
+  it('does not read the page visitors when the client has not turned them on', async () => {
+    // The neutral configuration leaves the feature off: a read of its tables would fail here, and the loader would report it.
+    state.failOn = (table) => table.startsWith('social_page_audience');
+    const r = await loadSocialData({ period, comparison });
+    expect(r.pageAudience).toEqual({ rows: [], periods: [], failed: false });
+  });
+
   it('does not keep in the cache a result whose post statistics could not be read', async () => {
     process.env['SOCIAL_DATA_CACHE_MS'] = '60000';
     const stats = (impressions: number) => ({ metrics: { impressions, likes: 50, comments: 2, shares: 1 } });

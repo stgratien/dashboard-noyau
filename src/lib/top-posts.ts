@@ -3,6 +3,7 @@ import { facebookPostUrl, safePostUrl } from './post-links';
 import type { KpiKey } from './kpi-definitions';
 import { VIDEO_FORMATS } from './windsor-mapping';
 import { dayNumber, isoFromDay, todayISO } from './dashboard-periods';
+import { companySizeLabel } from './company-size';
 
 /** Dépense minimale pour concourir au « Top CPM » : un débordement de quelques centimes ne doit pas gagner. */
 export const MIN_CPM_SPEND = 5;
@@ -223,7 +224,9 @@ export function audienceBreakdowns(rows: AudienceRow[], platform: string) {
   const age = genderAge.length ? share(fold(genderAge, l => l.split('.')[1] ?? l), false).sort((a, b) => a.label.localeCompare(b.label)) : share(dim('age'), isPercent('age')).sort((a, b) => a.label.localeCompare(b.label));
   const top = (d: string) => share(dim(d), isPercent(d)).slice(0, 10);
   const country = share(dim('country').map(r => ({ label: countryName(r.label), value: r.value })), isPercent('country')).slice(0, 10);
-  return { gender, age, country, city: top('city'), industry: top('industry'), function: top('function'), seniority: top('seniority') };
+  // Tranches d'effectif : libellés français, deux codes qui donnent le même libellé sont additionnés.
+  const companySize = share(fold(dim('companySize').map(r => ({ ...r, label: companySizeLabel(r.label) })), l => l), isPercent('companySize')).slice(0, 10);
+  return { gender, age, country, city: top('city'), industry: top('industry'), function: top('function'), seniority: top('seniority'), companySize };
 }
 
 export type AudiencePanel = { key: string; title: string; info: KpiKey; items: { label: string; value: number; percent: number }[]; withUnit: boolean };
@@ -239,6 +242,7 @@ export function audiencePanels(p: string, a: ReturnType<typeof audienceBreakdown
     add('industry', 'Secteurs (top 10)', 'audienceIndustry', a.industry, false);
     add('function', 'Fonctions (top 10)', 'audienceFunction', a.function, false);
     add('seniority', 'Ancienneté', 'audienceSeniority', a.seniority, false);
+    add('companySize', 'Tailles d’entreprise (top 10)', 'audienceCompanySize', a.companySize, false);
   }
   return panels;
 }
