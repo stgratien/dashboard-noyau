@@ -8,11 +8,13 @@ import { definition } from "@/lib/kpi-definitions";
 import { AD_AUDIENCE_PLATFORMS, AD_AUDIENCE_REPORT_ROWS, adAudienceView, type AdAudienceFigures, type AdAudiencePanelView, type AdAudienceViewRow } from "@/lib/ad-audience";
 import { Panel, ReportRowLimit, SectionTitle, TabNotes, fmt, pct, type SocialData, type ViewPeriods } from "./common";
 
-const HINT = "L’audience sponsorisée se relève par trimestre ou par édition terminés : choisissez-en un comme période pour la voir.";
+/** Les périodes relevées : les trimestres terminés et, pour un client qui en a, ses éditions terminées (un client sans édition n'en entend pas parler). */
+const readablePeriods = () => (client.events.editions.length > 0 ? "par trimestre ou par édition terminés" : "par trimestre terminé");
+const hint = () => `L’audience sponsorisée se relève ${readablePeriods()} : choisissez-en un comme période pour la voir.`;
 const UNFETCHED = "L’audience sponsorisée de cette période n’est pas encore relevée.";
 const FAILED = "Audience sponsorisée momentanément indisponible.";
 const ABOUT = "Personnes touchées par les publicités sur la période, par profil. Les clics comptent tous les clics sur les publicités, comme dans le gestionnaire de publicités du réseau.";
-const NO_COMPARISON = "La période comparée n’a pas d’audience sponsorisée relevée (les relevés se font par trimestre ou par édition terminés).";
+const noComparison = () => `La période comparée n’a pas d’audience sponsorisée relevée (les relevés se font ${readablePeriods()}).`;
 
 const dash = "—";
 /** Ligne « vs » d'une cellule : la valeur comparée (« — » si elle est inconnue, jamais zéro) et, quand les deux sont connues, la variation. */
@@ -126,12 +128,12 @@ export function AdAudienceSection({ data, p, period, comparison }: ViewPeriods &
   if (!client.features.adAudience || !AD_AUDIENCE_PLATFORMS.includes(p)) return null;
   const view = adAudienceView(data, p, period, comparison, adAudiencePeriods());
   const note =
-    view.state === "hint" ? HINT : view.state === "unfetched" ? UNFETCHED : view.state === "failed" ? FAILED : null;
+    view.state === "hint" ? hint() : view.state === "unfetched" ? UNFETCHED : view.state === "failed" ? FAILED : null;
   const reportLimit = limit === undefined ? undefined : Math.max(limit, AD_AUDIENCE_REPORT_ROWS);
   return (
     <section data-export-block className="space-y-3">
       <SectionTitle title="Audience sponsorisée" className="border-b pb-1 text-lg font-medium text-foreground" />
-      <TabNotes notes={[note, view.state === "ready" ? ABOUT : null, view.state === "ready" && !view.comparedAny ? NO_COMPARISON : null]} />
+      <TabNotes notes={[note, view.state === "ready" ? ABOUT : null, view.state === "ready" && !view.comparedAny ? noComparison() : null]} />
       {view.state === "ready" && (
         <div className={cn("grid gap-6", reportLimit !== undefined ? "grid-cols-2" : "grid-cols-1 lg:grid-cols-2")}>
           {view.panels.map((panel) => (
