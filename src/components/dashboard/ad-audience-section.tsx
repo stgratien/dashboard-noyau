@@ -148,7 +148,7 @@ export function AdAudienceSection({ data, p, period, comparison }: ViewPeriods &
       <SectionTitle title="Audience sponsorisée" className="border-b pb-1 text-lg font-medium text-foreground" />
       <TabNotes notes={[note, view.state === "ready" ? ABOUT : null, view.state === "ready" && !view.comparedAny ? noComparison() : null]} />
       {view.state === "ready" && (
-        <div className={cn("grid items-start gap-6", reportLimit !== undefined ? "grid-cols-2" : "grid-cols-1 lg:grid-cols-2")}>
+        <div className={cn("grid items-start gap-6", reportLimit !== undefined ? "grid-cols-2" : "grid-cols-1 xl:grid-cols-2")}>
           {view.panels.map((panel) => (
             <AdAudiencePanel key={panel.dimension} panel={panel} limit={reportLimit} info={definition("adAudience", p)} />
           ))}

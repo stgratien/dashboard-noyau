@@ -98,6 +98,9 @@ describe("AdAudienceSection", () => {
     expect(panel.querySelectorAll("li")).toHaveLength(10);
     // Panels are as tall as their own content: no empty frame stretched to the tallest neighbour.
     expect(container.querySelector(".grid")?.className).toContain("items-start");
+    // Two columns only on a wide window: each panel carries three figure columns, so at a medium width the labels would be squeezed.
+    expect(container.querySelector(".grid")?.className).toContain("xl:grid-cols-2");
+    expect(container.querySelector(".grid")?.className).not.toContain("lg:grid-cols-2");
     // No button for a panel that fits.
     const small = render(<AdAudienceSection data={data} p="linkedin" period={period} comparison={comparison} />);
     expect(within(small.container).queryByRole("button")).toBeNull();
@@ -137,6 +140,9 @@ describe("AdAudienceSection", () => {
     expect(within(panel).getByText("Taux de clic")).toBeTruthy();
     expect(within(panel).getByText("Impressions")).toBeTruthy();
     expect(panel.innerHTML).not.toMatch(/(?:^|[\s"])(?:sm|md|lg|xl):/);
+    // The report grid is two fixed columns, whatever the window of the capture.
+    expect(container.querySelector(".grid")?.className).toContain("grid-cols-2");
+    expect(container.querySelector(".grid")?.className).not.toMatch(/(?:sm|md|lg|xl):/);
   });
 
   it("keeps the responsive classes on screen only (phones get a caption in each cell, desktop a column header)", () => {
