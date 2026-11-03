@@ -3,6 +3,8 @@ import { PLATFORM_SOURCES } from "../core/client-config";
 import { calendarDate, type Period } from "./dashboard-periods";
 import type { RealTotals, SocialDay } from "./social-totals";
 
+const ORGANIC_FIGURES = ["impressions", "videoViews", "likes", "comments", "shares"] as const;
+
 /**
  * Premier jour dont les chiffres organiques du compte sont utilisables (historique manuel déjà fusionné) : un jour du fournisseur à zéro, ou dans une série
  * de zéros écartée (accountOrganicUnavailable), n'en est pas un. Null sans aucun jour, et pour TikTok dont l'organique vient des publications.
@@ -13,8 +15,10 @@ export function organicHistoryStart(days: readonly SocialDay[], p: PlatformId): 
   let first: string | null = null;
   for (const d of days) {
     if (d.platform !== p || d.source !== organic) continue;
+    // Une ligne d'historique manuel qui ne porte que le nombre de publications (aucun chiffre organique) ne rend pas l'organique du compte utilisable.
+    const hasOrganicFigure = ORGANIC_FIGURES.some((k) => d.metrics[k] != null);
     const usable =
-      d.metrics["manualOrganicHistory"] === 1 ||
+      (d.metrics["manualOrganicHistory"] === 1 && hasOrganicFigure) ||
       (d.metrics["accountOrganicUnavailable"] !== 1 && (d.metrics["impressions"] ?? 0) > 0);
     if (usable && (first === null || d.day < first)) first = d.day;
   }

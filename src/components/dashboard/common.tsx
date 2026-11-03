@@ -3,6 +3,7 @@ import { FileText, ImageOff, Image as ImageIcon, Images, Megaphone, MessageSquar
 import { readSocialData } from "@/lib/social-data.functions";
 import { type RealTotals } from "@/lib/social-totals";
 import { coverageDescription } from "@/lib/coverage-text";
+import type { NoteBlock } from "@/lib/partial-note";
 import { changePercent, formatBudget, formatEuro, formatNumber, formatPercent, formatChangePercent, formatPoints, typographicMinus, plural, labelForValue } from "@/lib/dashboard-format";
 import { PLATFORMS, type PlatformId } from "@/lib/dashboard-data";
 import { cn } from "@/lib/utils";
@@ -179,6 +180,36 @@ export function comparablePoints(t: RealTotals, o: RealTotals, key: keyof RealTo
     typeof previous === "number"
     ? current - previous
     : undefined;
+}
+
+/**
+ * Lignes grises en tête d'un onglet : pourquoi des chiffres sont « partiels » (partial-note.ts), pourquoi une comparaison est vide (comparison-note.ts).
+ * Une note est une phrase, ou un titre suivi d'une ligne par réseau (Global). Une explication à l'écran, jamais dans les exports PNG et PDF ni dans le rapport (data-export-hide) ;
+ * rien n'est écrit sans note.
+ */
+export function TabNotes({ notes }: { notes: (string | NoteBlock | null | undefined)[] }) {
+  const shownNotes = notes.filter((note): note is string | NoteBlock => Boolean(note));
+  if (!shownNotes.length) return null;
+  return (
+    <div data-export-hide className="space-y-1">
+      {shownNotes.map((note, index) =>
+        typeof note === "string" ? (
+          <p key={`${index}-${note}`} role="note" className="text-sm text-muted-foreground">
+            {note}
+          </p>
+        ) : (
+          <div key={`${index}-${note.title}`} role="note" className="text-sm text-muted-foreground">
+            <p>{note.title}</p>
+            <ul className="mt-0.5 list-disc space-y-0.5 pl-5">
+              {note.items.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        ),
+      )}
+    </div>
+  );
 }
 
 /** Ancres du menu de gauche : chaque titre de partie porte un identifiant et son libellé (data-nav), lus dans la page par le menu. */

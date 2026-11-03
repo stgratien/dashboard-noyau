@@ -71,6 +71,12 @@ describe('report tokens', () => {
     const all = { global: full, linkedin: li, facebook: full, instagram: full, tiktok: full };
     expect(buildReportNotes(all).every((note) => note.startsWith('LinkedIn,'))).toBe(true);
   });
+  it('lists the Global notes first, then each network in report order', () => {
+    const all = { global: { ...full, missing: { posts: ['tiktok'] } }, linkedin: { ...full, missing: { impressions: ['linkedin:organic'] } }, facebook: full, instagram: full, tiktok: full };
+    const notes = buildReportNotes(all);
+    expect(notes[0]).toMatch(/^Global,/);
+    expect(notes[notes.length - 1]).toMatch(/^LinkedIn,/);
+  });
   it('writes the YouTube budget of slide 51 with the compared budget, its change and its tone', () => {
     expect(youtubeTokens({ spend: 1500 }, { spend: 1000 })).toEqual({
       'youtube.spend': '1,5K€', 'youtube.spend_prev': '1K€', 'youtube.spend_change': '+50%', 'youtube.spend_tone': 'good',

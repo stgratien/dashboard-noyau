@@ -11,12 +11,13 @@ import { client } from './client';
 
 type Totals = ReportTotals & ReturnType<typeof realBlendedTotals>;
 
-/** Les quatre réseaux, puis le Global (YouTube ajouté comme dans l'onglet Global) pour une période. */
+/** Les réseaux du client, puis le Global (YouTube ajouté comme dans l'onglet Global) pour une période ; sans onglet Global (client.features.global), le rapport n'a pas de Global non plus (avec un seul réseau il le doublerait de toute façon). */
 function totalsFor(social: Awaited<ReturnType<typeof loadSocialData>>, period: Period, youtube: YoutubeData | null, youtubeUnavailable: boolean) {
   const networks = Object.fromEntries(
     // Les stories ne concernent qu'Instagram et ne sont jamais ajoutées au Global (les impressions du compte les comprennent déjà).
     REPORT_NETWORKS.map((n) => [n, { ...realBlendedTotals(n, social.days, social.posts, period, social.statuses, social.ads, social.adCoverage), ...(n === 'instagram' ? { stories: storiesTotals(social.stories, social.storyPulls, period, { failed: social.storiesFailed }) } : {}) }]),
   ) as Record<ReportNetwork, Totals>;
+  if (!client.features.global) return networks;
   // Les lignes Google Ads ne servent qu'au payant de YouTube, jamais au Global (abonnés, vidéos, vues et interactions organiques).
   const global = addYoutubeToSocial(
     realAllNetworkTotals(REPORT_NETWORKS.map((n) => networks[n])),
@@ -39,7 +40,8 @@ export async function loadReportTokens(period: Period, comparison?: { period: Pe
   // aucune promesse ne peut donc être rejetée et une panne sociale reste la seule à faire échouer le calcul.
   // Comme le tableau de bord : lecture YouTube impossible = Global sans YouTube, signalé partiel (jamais un total complet en apparence).
   const youtubeRead = (async (): Promise<{ youtube: YoutubeData | null; youtubeUnavailable: boolean; ms: number }> => {
-    if (!client.features.youtube) return { youtube: null, youtubeUnavailable: false, ms: 0 };
+    // YouTube ne sert qu'au Global (abonnés, vidéos, vues, interactions) : sans onglet Global, aucune lecture.
+    if (!client.features.youtube || !client.features.global) return { youtube: null, youtubeUnavailable: false, ms: 0 };
     try {
       return { youtube: await loadYoutube(range), youtubeUnavailable: false, ms: Date.now() - began };
     } catch (error) {

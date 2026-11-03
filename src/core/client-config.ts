@@ -69,8 +69,10 @@ export interface ClientInput {
    * `manualOrganicFirst` (facebook, linkedin) : réseaux dont l'historique organique manuel (export de l'administration du compte, table social_organic_history) PASSE AVANT les relevés du fournisseur
    * pour les jours qu'il couvre (défaut : aucun, les relevés du fournisseur passent avant et l'historique ne comble que leurs jours vides). À choisir quand l'export est plus complet
    * que le connecteur (par exemple des statistiques que le fournisseur ne remonte qu'en partie).
+   * `instagramViewsIncludePaidBefore` (Instagram) : premier jour dont les publications ont des vues SANS la diffusion payante (celles du connecteur). Les publications d'avant, importées de l'export natif de la plateforme,
+   * ont des vues à vie qui comprennent déjà le payant : « Vues de vidéo » n'y ajoute pas les vues de vidéo des annonces Meta Ads (double compte). Défaut : absent, les vues payantes sont toujours ajoutées.
    */
-  data: { start: IsoDate; manualOrganicFirst?: ManualOrganicPlatform[] };
+  data: { start: IsoDate; manualOrganicFirst?: ManualOrganicPlatform[]; instagramViewsIncludePaidBefore?: IsoDate };
   /** Éditions ou temps forts du client (Édition 2023, 2025...) : raccourcis de période, comparaisons, rattrapage d'import. Défaut : aucune. */
   events?: { editions?: EventEdition[]; groupLabel?: string };
   /** Sources Windsor activées pour ce client (les identifiants de comptes sont dans la partie serveur). */
@@ -139,7 +141,7 @@ export interface Client {
     exportFileBase: string;
     exportTitle: string;
   };
-  data: { start: IsoDate; manualOrganicFirst: ManualOrganicPlatform[] };
+  data: { start: IsoDate; manualOrganicFirst: ManualOrganicPlatform[]; instagramViewsIncludePaidBefore?: IsoDate };
   events: { editions: EventEdition[]; groupLabel: string };
   sources: WindsorSource[];
   networks: PlatformId[];
@@ -162,6 +164,7 @@ const ISO = /^\d{4}-\d{2}-\d{2}$/;
 export function defineClient(input: ClientInput): Client {
   if (!/^[a-z0-9-]+$/.test(input.id)) throw new Error(`Configuration client : id invalide « ${input.id} » (a-z, 0-9 et tirets).`);
   if (!ISO.test(input.data.start)) throw new Error("Configuration client : data.start doit être une date AAAA-MM-JJ.");
+  if (input.data.instagramViewsIncludePaidBefore !== undefined && !ISO.test(input.data.instagramViewsIncludePaidBefore)) throw new Error("Configuration client : data.instagramViewsIncludePaidBefore doit être une date AAAA-MM-JJ.");
   for (const platform of input.data.manualOrganicFirst ?? []) if (!MANUAL_ORGANIC_PLATFORMS.includes(platform)) throw new Error(`Configuration client : data.manualOrganicFirst n'accepte que facebook et linkedin (reçu « ${platform} »).`);
   const editions = input.events?.editions ?? [];
   for (const edition of editions) {
@@ -199,7 +202,11 @@ export function defineClient(input: ClientInput): Client {
       exportFileBase: b.exportFileBase ?? `Dashboard-${b.name.trim().replace(/\s+/g, "-")}`,
       exportTitle: b.exportTitle ?? `Dashboard ${b.name}`,
     },
-    data: { start: input.data.start, manualOrganicFirst: [...new Set(input.data.manualOrganicFirst ?? [])] },
+    data: {
+      start: input.data.start,
+      manualOrganicFirst: [...new Set(input.data.manualOrganicFirst ?? [])],
+      ...(input.data.instagramViewsIncludePaidBefore ? { instagramViewsIncludePaidBefore: input.data.instagramViewsIncludePaidBefore } : {}),
+    },
     events: { editions, groupLabel: input.events?.groupLabel ?? "Éditions" },
     sources: input.sources,
     networks: ALL_PLATFORMS.filter((p) => networks.includes(p)),

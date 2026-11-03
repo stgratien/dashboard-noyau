@@ -3,6 +3,7 @@ import { PLATFORM_SOURCES } from "../core/client-config";
 import { dayNumber, isoFromDay, periodDays, todayISO, type Period } from "./dashboard-periods";
 import { nullableSum, VIDEO_FORMATS, type Metrics } from "./windsor-mapping";
 import { followerChange } from "./social-followers";
+import { client } from "./client";
 
 export type SocialDay = {
   platform: string;
@@ -174,11 +175,23 @@ export function realBlendedTotals(
     missing["videoViews"] = [`instagram:videos:${videoCohort.length - videosWithViews.length}`];
   // Instagram : « Vues de vidéo » = vues des reels et vidéos publiés sur la période (organiques, à leur date de publication) + vues de vidéo des annonces Meta Ads sur Instagram (par jour de diffusion),
   // comme les autres réseaux (organique + payant) : les vues organiques d'une publication excluent la diffusion payante. Sans vues organiques connues il n'y a rien à afficher (jamais le payant seul).
+  // Les publications d'avant `instagramViewsIncludePaidBefore` (export natif) ont des vues qui comprennent déjà la diffusion payante : on n'y ajoute que les vues payantes livrées à partir de ce jour (jamais deux fois la même diffusion).
+  const igPaidFrom = client.data.instagramViewsIncludePaidBefore ?? null;
+  const paidViewsToAdd = (): number | null => {
+    if (!igPaidFrom || igPaidFrom <= period.start) return sum(paid, "videoViews");
+    if (period.end < igPaidFrom) return 0;
+    const end = endFor(paid);
+    const from = igPaidFrom;
+    const rows = own.filter((d) => d.source === paid && d.day >= from && d.day <= end);
+    const expected = end < from ? 0 : periodDays({ start: from, end });
+    if (expected === 0 || rows.length !== expected) return null;
+    return nullableSum(rows.map((d) => d.metrics["videoViews"]));
+  };
   const videoViews = (() => {
     if (p !== "instagram") return blended("videoViews");
     const a = organicSum("videoViews");
     if (a == null) return null;
-    const b = sum(paid, "videoViews");
+    const b = paidViewsToAdd();
     if (b == null) {
       missing["videoViews"] = [...(missing["videoViews"] ?? []), `${p}:paid`];
       return a;

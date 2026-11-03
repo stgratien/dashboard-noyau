@@ -11,9 +11,10 @@ import { yesterdayISO, type Period } from "@/lib/dashboard-periods";
 import { AUDIENCE_VIEW_LABELS, audienceDefaultView, audienceSeries, audienceViews, type AudienceView } from "@/lib/social-followers";
 import { storiesTotals, storyDelta, storyNote } from "@/lib/social-stories";
 import { comparisonGapNote } from "@/lib/comparison-note";
+import { comparedPartialNote, partialNote } from "@/lib/partial-note";
 import { definition, type KpiKey } from "@/lib/kpi-definitions";
 import { postStats, topPosts, flopPosts, formatOptions, sortRows, pageWindow, audienceBreakdowns, audiencePanels, formatLabel, paidAdStats, TABLE_PAGE_SIZE, type SortKey, type PostStats, type PostType } from "@/lib/top-posts";
-import { BRAND_COLORS, BigSection, MissingVisual, Kpi, NAV_SCROLL, Panel, ReportRowLimit, navProps, navSlug, reportAttr, SectionTitle, type SocialData, type ViewPeriods, axis, axisNumber, budget, comparableDelta, comparablePoints, coverageDetails, prevShown, delta, eur, fmt, followerNote, nf, pct, shown, tip } from "@/components/dashboard/common";
+import { BRAND_COLORS, BigSection, MissingVisual, Kpi, NAV_SCROLL, Panel, ReportRowLimit, navProps, navSlug, reportAttr, SectionTitle, TabNotes, type SocialData, type ViewPeriods, axis, axisNumber, budget, comparableDelta, comparablePoints, coverageDetails, prevShown, delta, eur, fmt, followerNote, nf, pct, shown, tip } from "@/components/dashboard/common";
 
 export function InteractionLabel({
   x,
@@ -225,16 +226,15 @@ export function PlatformView({ data, p, period, comparison }: ViewPeriods & { p:
     so = storiesTotals(data.stories, data.storyPulls, comparison, { failed: data.storiesFailed });
   const best = topPosts(inPeriodPosts, promotedPosts);
   const flops = flopPosts(inPeriodPosts);
-  // Période comparée sans chiffres organiques : une phrase dit pourquoi les cartes affichent « vs — » (jamais dans les exports ni le rapport).
+  // Trois phrases en tête (jamais dans les exports ni le rapport) : pourquoi des cartes de la période affichée portent « partiel » (partialNote), puis, période comparée sans chiffres
+  // organiques, pourquoi elles affichent « vs — » (comparisonGapNote), puis pourquoi une valeur comparée porte « (partiel) » pour une autre raison (comparedPartialNote, qui ne répète pas la précédente).
+  const partial = partialNote(p, data.days, t, period);
   const gapNote = comparisonGapNote(p, data.days, t, o, comparison);
+  const comparedPartial = comparedPartialNote(p, data.days, t, o, comparison);
 
   return (
     <div className="space-y-8">
-      {gapNote && (
-        <p data-export-hide role="note" className="text-sm text-muted-foreground">
-          {gapNote}
-        </p>
-      )}
+      <TabNotes notes={[partial, gapNote, comparedPartial]} />
       <BigSection title="Activité" four={!tk}>
         <Kpi tooltip={D("followers")} note={followerNote(t)} label="Abonnés" value={shown(t, fmt(t.followers))} />
         <Kpi

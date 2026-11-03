@@ -4,7 +4,8 @@ import { videosNote } from "@/lib/dashboard-format";
 import { PLATFORMS, type PlatformId } from "@/lib/dashboard-data";
 import { definition, type KpiKey } from "@/lib/kpi-definitions";
 import { youtubeTotals, addYoutubeToSocial, type YoutubeData } from "@/lib/youtube";
-import { type GoogleData, Kpi, type SocialData, type ViewPeriods, budget, comparablePoints, coverageDetails, prevShown, delta, eur, fmt, followerNote, pct, shown } from "@/components/dashboard/common";
+import { comparedGlobalNote, globalPartialNote } from "@/lib/partial-note";
+import { type GoogleData, Kpi, TabNotes, type SocialData, type ViewPeriods, budget, comparablePoints, coverageDetails, prevShown, delta, eur, fmt, followerNote, pct, shown } from "@/components/dashboard/common";
 
 export function TotalCards({
   t,
@@ -185,8 +186,24 @@ export function Overview({
     youtube?.lastSuccess ? youtubeTotals(youtube, g, comparison) : null,
     youtubeUnavailable,
   );
+  // Pourquoi des cartes portent « partiel » (réseaux ou sources manquants sur la période affichée) et pourquoi des valeurs comparées portent « (partiel) » : des lignes grises par réseau,
+  // jamais dans les exports ni le rapport.
+  const partial = globalPartialNote(
+    data.days,
+    rows.map((row) => row.current),
+    t,
+    period,
+  );
+  const comparedPartial = comparedGlobalNote(
+    data.days,
+    rows.map((row) => row.previous),
+    t,
+    o,
+    comparison,
+  );
   return (
     <div className="space-y-6">
+      <TabNotes notes={[partial, comparedPartial]} />
       <section data-export-block aria-label="Tous réseaux" className="space-y-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <TotalCards large t={t} o={o} />

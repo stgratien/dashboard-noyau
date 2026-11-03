@@ -6,6 +6,7 @@ import { dayNumber, isoFromDay, yesterdayISO } from '../lib/dashboard-periods';
 import { PLATFORMS } from '../lib/dashboard-data';
 import { formatNumber, formatEuro } from '../lib/dashboard-format';
 import { periodShortcutGroups, previousEdition, comparisonFor, periodShortcuts } from '../lib/dashboard-periods';
+import { client } from '../lib/client';
 
 // Configuration neutre : les éditions, le début des données et les réseaux ne viennent pas du client de ce dépôt (les faits propres au client se testent dans le dossier src/client/tests de son dépôt).
 vi.mock('@/client/config', async () => (await import('@/test/fixtures/neutral-client')).neutralClientModule());
@@ -343,6 +344,44 @@ describe('real Windsor aggregates', () => {
       // Les vues organiques d'une publication excluent le payant : pas de recouvrement ; le CPV reste budget ÷ vues payantes.
       expect(t.cpv).toBeCloseTo(15 / (3 * 777), 9);
       expect(t.missing['videoViews']).toBeUndefined();
+    });
+    describe('posts whose views already include the paid delivery (instagramViewsIncludePaidBefore)', () => {
+      const withCutoff = <T,>(day: string | undefined, run: () => T): T => {
+        const data = client.data as { instagramViewsIncludePaidBefore?: string };
+        const before = data.instagramViewsIncludePaidBefore;
+        if (day === undefined) delete data.instagramViewsIncludePaidBefore; else data.instagramViewsIncludePaidBefore = day;
+        try { return run(); } finally { if (before === undefined) delete data.instagramViewsIncludePaidBefore; else data.instagramViewsIncludePaidBefore = before; }
+      };
+      it('adds no paid video views when the whole period is before the day (the posts views already include them), the cost per view keeps the paid views', () => {
+        const t = withCutoff('2025-09-18', () => realBlendedTotals('instagram', igDays({ videoViews: 777 }), publications, igPeriod, []));
+        expect(t.videoViews).toBe(300);
+        expect(t.missing['videoViews']).toBeUndefined();
+        expect(t.cpv).toBeCloseTo(15 / (3 * 777), 9);
+      });
+      it('adds only the paid video views delivered from the day on when the period straddles it', () => {
+        const t = withCutoff('2025-09-16', () => realBlendedTotals('instagram', igDays({ videoViews: 777 }), publications, igPeriod, []));
+        expect(t.videoViews).toBe(300 + 2 * 777);
+      });
+      it('behaves as before when the day is not after the start of the period, or when no day is configured', () => {
+        expect(withCutoff('2025-09-15', () => realBlendedTotals('instagram', igDays({ videoViews: 777 }), publications, igPeriod, []).videoViews)).toBe(300 + 3 * 777);
+        expect(withCutoff('2020-01-01', () => realBlendedTotals('instagram', igDays({ videoViews: 777 }), publications, igPeriod, []).videoViews)).toBe(300 + 3 * 777);
+        expect(withCutoff(undefined, () => realBlendedTotals('instagram', igDays({ videoViews: 777 }), publications, igPeriod, []).videoViews)).toBe(300 + 3 * 777);
+      });
+      it('flags the total partial only for a missing paid day from the configured day on, never before it', () => {
+        const unknownBefore = igDays({ videoViews: 777 }).map(d => (d.source === 'facebook' && d.day === '2025-09-15' ? { ...d, metrics: { ...d.metrics, videoViews: null } } : d));
+        const before = withCutoff('2025-09-16', () => realBlendedTotals('instagram', unknownBefore, publications, igPeriod, []));
+        expect(before.videoViews).toBe(300 + 2 * 777);
+        expect(before.missing['videoViews']).toBeUndefined();
+        const unknownAfter = igDays({ videoViews: 777 }).filter(d => !(d.source === 'facebook' && d.day === '2025-09-17'));
+        const after = withCutoff('2025-09-16', () => realBlendedTotals('instagram', unknownAfter, publications, igPeriod, []));
+        expect(after.videoViews).toBe(300);
+        expect(after.missing['videoViews']).toEqual(['instagram:paid']);
+      });
+      it('does not change the other networks', () => {
+        const days = ['2025-09-15', '2025-09-16', '2025-09-17'].flatMap(day => ['facebook_organic', 'facebook'].map(source => ({ platform: 'facebook', source, day, followers_estimated: false, metrics: { impressions: 1000, likes: 1, comments: 0, shares: 0, videoViews: 100, postsAvailable: 1, spend: 5 } })));
+        const normal = realBlendedTotals('facebook', days, [], igPeriod, []).videoViews;
+        expect(withCutoff('2025-09-18', () => realBlendedTotals('facebook', days, [], igPeriod, []).videoViews)).toBe(normal);
+      });
     });
     it('flags the video views partial when the paid views of some days are unknown, and never shows the paid views alone', () => {
       const unknownPaid = igDays().map(d => (d.source === 'facebook' && d.day === '2025-09-16' ? { ...d, metrics: { ...d.metrics, videoViews: null } } : d));

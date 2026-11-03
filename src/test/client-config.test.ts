@@ -26,6 +26,10 @@ describe("client configuration", () => {
     // Instagram and TikTok have their own logic (video cohort, paid views of the export): the choice does not apply to them.
     expect(() => defineClient({ ...clientV1, data: { ...clientV1.data, manualOrganicFirst: ["instagram" as "linkedin"] } })).toThrow(/facebook et linkedin/);
     expect(() => defineClient({ ...clientV1, data: { ...clientV1.data, manualOrganicFirst: ["tiktok" as "linkedin"] } })).toThrow(/facebook et linkedin/);
+    // Instagram : jour à partir duquel les vues des publications n'incluent plus le payant : optionnel (absent par défaut), date AAAA-MM-JJ sinon.
+    expect(defineClient(clientV1).data.instagramViewsIncludePaidBefore).toBeUndefined();
+    expect(defineClient({ ...clientV1, data: { ...clientV1.data, instagramViewsIncludePaidBefore: "2025-03-01" } }).data.instagramViewsIncludePaidBefore).toBe("2025-03-01");
+    expect(() => defineClient({ ...clientV1, data: { ...clientV1.data, instagramViewsIncludePaidBefore: "01/03/2025" } })).toThrow(/instagramViewsIncludePaidBefore/);
   });
 
   it("derives the network tabs from the enabled sources, Meta Ads feeding Facebook and Instagram", () => {

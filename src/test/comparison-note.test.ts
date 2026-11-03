@@ -28,6 +28,14 @@ describe('organicHistoryStart', () => {
     const provider = [igDay('2025-02-01', { impressions: 0 }), igDay('2025-02-02', { impressions: 40 })];
     expect(organicHistoryStart(provider, 'instagram')).toBe('2025-02-02');
   });
+  it('ignores a manual history row that only carries the number of publications', () => {
+    const postsOnly = [{ ...igDay('2024-01-01', { manualOrganicHistory: 1, manualPostsPublished: 1, postsAvailable: 1 }) }];
+    expect(organicHistoryStart(postsOnly, 'instagram')).toBeNull();
+    // Avec un chiffre organique manuel (ici une réaction), la ligne compte comme avant.
+    const withFigure = [{ ...igDay('2024-01-02', { manualOrganicHistory: 1, likes: 0 }) }];
+    expect(organicHistoryStart(withFigure, 'instagram')).toBe('2024-01-02');
+    expect(organicHistoryStart([...postsOnly, ...withFigure], 'instagram')).toBe('2024-01-02');
+  });
   it('is null without any organic day, for another network or for TikTok', () => {
     expect(organicHistoryStart(paid, 'instagram')).toBeNull();
     expect(organicHistoryStart(days, 'linkedin')).toBeNull();

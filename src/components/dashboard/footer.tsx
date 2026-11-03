@@ -3,7 +3,7 @@ import { client } from "@/lib/client";
 
 /**
  * Pied de page de toutes les pages : « Fait avec ♥️ par <signature du client> » (client.brand.footerCredit ; sans signature : « Fait avec ♥️ »).
- * Sur l'onglet Global, le cœur est le lien qui génère le reporting (`onGenerate`) ; ailleurs c'est un simple emoji.
+ * Sur l'onglet Global (ou, pour un client sans Global, sur l'onglet réseau), le cœur est le lien qui génère le reporting (`onGenerate`) ; ailleurs c'est un simple emoji.
  */
 export function DashboardFooter({ onGenerate, generating = false, className }: { onGenerate?: (() => void) | undefined; generating?: boolean; className?: string }) {
   return (

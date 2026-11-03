@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { staleSyncLabel } from "@/lib/sync-staleness";
 import { client } from "@/lib/client";
 import { googleReportConfigured } from "@/lib/google-report-config";
+import { reportTabAvailable } from "@/lib/report-tab";
 import { Fragment, lazy, useEffect, useRef, useState, Suspense, type ComponentType, type CSSProperties } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -76,6 +77,8 @@ const tabLabel = (t: Tab) =>
 
 /** Onglet d'ouverture : Global quand le client l'affiche (features.global), sinon son premier réseau. */
 const FIRST_TAB: Tab = client.features.global ? "overview" : (PLATFORMS[0]?.id ?? "overview");
+/** Onglets d'où le reporting se lance : Global, ou chaque onglet réseau pour un client sans Global (voir reportTabAvailable). */
+const isReportTab = (t: Tab) => reportTabAvailable(t, client.features.global, PLATFORMS.map((p) => p.id));
 
 /** Onglets du dashboard : en ligne sous l'en-tête (petits écrans, ou « ?menu=haut »), en colonne à gauche sinon. */
 type NavSection = { id: string; label: string };
@@ -219,11 +222,11 @@ function Dashboard() {
       return read({ data: { period, comparison: comparison.period, ...(fresh ? { fresh: true } : {}) } });
     },
   });
-  // Le reporting se lance depuis le cœur du pied de page de l'onglet Global (plus de bouton dans l'en-tête).
+  // Le reporting se lance depuis le cœur du pied de page de l'onglet Global, ou de l'onglet réseau pour un client sans Global (plus de bouton dans l'en-tête).
   const report = useReportGenerator({
     period,
     comparison: comparison.period,
-    enabled: tab === "overview" && googleReportConfigured(),
+    enabled: isReportTab(tab) && googleReportConfigured(),
     // Les images sont celles du dashboard pour la période et la comparaison choisies, rendues hors écran avec les mêmes données.
     captureImages: social.data
       ? async (hooks) => (await import("@/components/dashboard/report-capture")).captureReportImages({ data: social.data, period, comparison: comparison.period, ...hooks })
@@ -396,7 +399,7 @@ function Dashboard() {
               <PlatformView key={tab} data={social.data} p={tab} period={period} comparison={comparison.period} />
             )}
           </main>
-          <DashboardFooter className="px-0" onGenerate={tab === "overview" && googleReportConfigured() ? report.generate : undefined} generating={report.running || !social.data || social.isFetching} />
+          <DashboardFooter className="px-0" onGenerate={isReportTab(tab) && googleReportConfigured() ? report.generate : undefined} generating={report.running || !social.data || social.isFetching} />
           </div>
           </div>
           {report.dialog}

@@ -225,22 +225,25 @@ export function partialNotes(prefix: string, t: Pick<ReportTotals, 'missing' | '
   return notes;
 }
 
-/** Notes de couverture de tout le rapport (Global puis chaque réseau). */
-export function buildReportNotes(totals: { global: ReportTotals } & Record<ReportNetwork, ReportTotals>) {
-  return ['global', ...REPORT_NETWORKS].flatMap((n) => partialNotes(n, n === 'global' ? totals.global : totals[n as ReportNetwork]));
+/** Chiffres d'une période : chaque réseau du client et, seulement pour un client qui affiche l'onglet Global (client.features.global), le Global (sans onglet Global, le rapport n'en a pas non plus). */
+export type ReportTotalsSet = { global?: ReportTotals } & Record<ReportNetwork, ReportTotals>;
+
+/** Notes de couverture de tout le rapport (Global quand il existe, puis chaque réseau). */
+export function buildReportNotes(totals: ReportTotalsSet) {
+  return [...(totals.global ? partialNotes('global', totals.global) : []), ...REPORT_NETWORKS.flatMap((n) => partialNotes(n, totals[n]))];
 }
 
-export type ReportComparison = { label: string; totals: { global: ReportTotals } & Record<ReportNetwork, ReportTotals> };
+export type ReportComparison = { label: string; totals: ReportTotalsSet };
 
-/** Tous les marqueurs du rapport pour une période : titres, Global et chaque réseau (et la période comparée si elle est donnée). */
-export function buildReportTokens(period: Period, totals: { global: ReportTotals } & Record<ReportNetwork, ReportTotals>, comparison?: ReportComparison, youtube?: { current: ReportYoutube; previous?: ReportYoutube }) {
+/** Tous les marqueurs du rapport pour une période : titres, Global (s'il existe) et chaque réseau (et la période comparée si elle est donnée). */
+export function buildReportTokens(period: Period, totals: ReportTotalsSet, comparison?: ReportComparison, youtube?: { current: ReportYoutube; previous?: ReportYoutube }) {
   const since = previousLabel(period);
   const one = (prefix: string, current: ReportTotals, previous?: ReportTotals) => networkTokens(prefix, current, since, previous);
   return {
     trimestre: periodName(period),
     periode_longue: longPeriod(period),
     ...(comparison ? { comparaison: comparison.label } : {}),
-    ...one('global', totals.global, comparison?.totals.global),
+    ...(totals.global ? one('global', totals.global, comparison?.totals.global) : {}),
     ...REPORT_NETWORKS.reduce<Record<string, string>>((all, n) => ({ ...all, ...one(n, totals[n], comparison?.totals[n]) }), {}),
     ...(youtube ? youtubeTokens(youtube.current, comparison ? youtube.previous : undefined) : {}),
   } as Record<string, string>;

@@ -1,4 +1,6 @@
 import { cardObjectId, changeObjectId, type CardPlacement } from './google-report';
+import { REPORT_NETWORKS } from './report-tokens';
+import { client } from './client';
 
 /**
  * Cartes natives du modèle (formes et textes Google Slides au style des cartes du dashboard) : la sous-ligne « vs … (+x%) » de chaque
@@ -19,7 +21,15 @@ export const NATIVE_CARD_NETWORKS: Record<string, string[]> = {
 /** Zones d'écart seules (« +28% » entre deux colonnes), colorées en entier : diapositive YouTube (51), budget des campagnes Google Ads « YouTube ». */
 export const CHANGE_CARD_NETWORKS: Record<string, string[]> = { youtube: ['spend'] };
 
-export const nativeCardPlacements = (networks: Record<string, string[]> = NATIVE_CARD_NETWORKS, changes: Record<string, string[]> = CHANGE_CARD_NETWORKS): CardPlacement[] => [
+/**
+ * Cartes du client : ses réseaux (le Global seulement s'il affiche l'onglet Global) et la zone du budget YouTube seulement avec Google Ads. Sans ce tri, le modèle d'un client à un seul
+ * réseau ne contient pas les identifiants des autres réseaux, et si la lecture du modèle échoue la coloration (un seul lot, atomique) serait refusée en entier.
+ */
+const clientCardNetworks = (): Record<string, string[]> =>
+  Object.fromEntries(Object.entries(NATIVE_CARD_NETWORKS).filter(([prefix]) => (prefix === 'global' ? client.features.global : (REPORT_NETWORKS as readonly string[]).includes(prefix))));
+const clientChangeCards = (): Record<string, string[]> => (client.features.googleAds ? CHANGE_CARD_NETWORKS : {});
+
+export const nativeCardPlacements = (networks: Record<string, string[]> = clientCardNetworks(), changes: Record<string, string[]> = clientChangeCards()): CardPlacement[] => [
   ...Object.entries(networks).flatMap(([prefix, metrics]) => metrics.map((metric) => ({ objectId: cardObjectId(prefix, metric), prefix, metric }))),
   ...Object.entries(changes).flatMap(([prefix, metrics]) => metrics.map((metric) => ({ objectId: changeObjectId(prefix, metric), prefix, metric, whole: true }))),
 ];
