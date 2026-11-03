@@ -83,8 +83,9 @@ export interface ClientInput {
    * Intégrations hors Windsor (scripts nocturnes) et onglet Global. Défaut : Google Ads et YouTube activés ; `global` (vue « tous réseaux ») affiché
    * dès qu'il y a plusieurs onglets réseaux, masqué sinon (le premier onglet réseau s'ouvre alors en premier). `adAudience` (défaut : désactivé) ajoute à l'onglet
    * LinkedIn l'« Audience sponsorisée » : les découpages démographiques des annonces LinkedIn relevés par Windsor pour des périodes calendaires entières
-   * (nécessite la source `linkedin` et la migration 0015). `pageAudience` (défaut : désactivé) ajoute à l'onglet LinkedIn les « Visiteurs de la page » : les pages vues
-   * de la page par taille d'entreprise du visiteur, relevées par Windsor pour des périodes calendaires entières (nécessite la source `linkedin_organic` et la migration 0016).
+   * (nécessite la source `linkedin` et la migration 0015). `pageAudience` (défaut : désactivé) ajoute à l'onglet LinkedIn les « Tailles d'entreprise » : les visiteurs de la page et
+   * les abonnés par taille d'entreprise, chiffres relevés dans les statistiques du réseau et chargés à la main par trimestre (le réseau ne les fournit pas par période à Windsor ;
+   * nécessite l'onglet LinkedIn et les migrations 0016 et 0017).
    */
   features?: { googleAds?: boolean; youtube?: boolean; global?: boolean; adAudience?: boolean; pageAudience?: boolean };
   /** Rapprochement annonce-publication par le nom de l'annonce : mots propres au client à ignorer en plus de la liste de base (« paris », nom de l'événement...). */
@@ -193,8 +194,8 @@ export function defineClient(input: ClientInput): Client {
   }
   if (input.features?.adAudience && !input.sources.includes("linkedin"))
     throw new Error("Configuration client : features.adAudience (audience sponsorisée) demande la source Windsor « linkedin » (LinkedIn Ads).");
-  if (input.features?.pageAudience && !input.sources.includes("linkedin_organic"))
-    throw new Error("Configuration client : features.pageAudience (visiteurs de la page) demande la source Windsor « linkedin_organic » (page LinkedIn).");
+  if (input.features?.pageAudience && !input.sources.includes("linkedin") && !input.sources.includes("linkedin_organic"))
+    throw new Error("Configuration client : features.pageAudience (tailles d'entreprise) demande l'onglet LinkedIn (source Windsor « linkedin » ou « linkedin_organic »).");
   const b = input.brand, r = input.report ?? {};
   return {
     id: input.id,

@@ -7,7 +7,6 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PostLink } from "@/components/post-link";
 import { AdAudienceSection } from "./ad-audience-section";
-import { client } from "@/lib/client";
 import { PageAudienceSection } from "./page-audience-section";
 import { cn } from "@/lib/utils";
 import { yesterdayISO, type Period } from "@/lib/dashboard-periods";
@@ -957,8 +956,8 @@ export function Bars({
   );
 }
 
-/** Clé de rapport d'un panneau d'abonnés. Les tailles d'entreprise ne sont capturées que pour un client qui les met dans son rapport (même option que les visiteurs de la page) : sans l'emplacement dans son modèle, chaque rapport signalerait un emplacement absent. */
-const reportKeyProps = (key: string) => (key === "companySize" && !client.features.pageAudience ? {} : { reportKey: `audience-${key}` });
+/** Clé de rapport d'un panneau d'abonnés. Les tailles d'entreprise (répartition actuelle) ne vont pas au rapport : la section « Tailles d'entreprise » porte celles de la période, avec leur comparaison. */
+const reportKeyProps = (key: string) => (key === "companySize" ? {} : { reportKey: `audience-${key}` });
 
 export function AudienceSection({ rows, p }: { rows: SocialData["audience"]; p: PlatformId }) {
   const a = audienceBreakdowns(

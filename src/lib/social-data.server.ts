@@ -149,9 +149,9 @@ async function loadAdAudience(db: SupabaseClient<Database>, ranges: PeriodInput[
 const PAGE_AUDIENCE_ROW_COLUMNS = 'platform,dimension,period_start,period_end,label,views';
 const PAGE_AUDIENCE_PERIOD_COLUMNS = 'platform,dimension,period_start,period_end,returned_count,total_views,is_final,synced_at';
 /**
- * Visiteurs de la page (migration 0016) : les relevés des périodes affichée et comparée, lus par leurs dates exactes (la table ne garde que des périodes entières).
- * Sans la fonction activée dans la configuration du client, aucune lecture. Seuls les relevés aboutis sont gardés, et leurs valeurs avec eux : une valeur sans relevé
- * abouti (écriture en cours, tentative ratée) ne prouve rien. Une table absente est un suivi non actif, sans bruit ; toute autre erreur est dite `failed`, journalisée,
+ * Tailles d'entreprise des visiteurs et des abonnés (migrations 0016 et 0017) : les chiffres chargés à la main pour les périodes affichée et comparée, lus par leurs dates exactes (la table ne garde que
+ * des périodes entières). Sans la fonction activée dans la configuration du client, aucune lecture. Seuls les relevés aboutis sont gardés, et leurs valeurs avec eux : une valeur sans relevé
+ * abouti (chargement en cours) ne prouve rien. Une table absente est un suivi non actif, sans bruit ; toute autre erreur est dite `failed`, journalisée,
  * et le résultat n'est pas gardé en cache.
  */
 async function loadPageAudience(db: SupabaseClient<Database>, ranges: PeriodInput[]): Promise<PageAudienceData> {
@@ -186,7 +186,7 @@ async function loadPageAudience(db: SupabaseClient<Database>, ranges: PeriodInpu
     return { rows, periods, failed: false };
   } catch (error) {
     if (isMissingTable(error)) return { rows: [], periods: [], failed: false };
-    console.warn('social-data: lecture des visiteurs de la page impossible', error instanceof Error ? error.message : error, (error as { cause?: { code?: string } }).cause?.code ?? '');
+    console.warn('social-data: lecture des tailles d’entreprise impossible', error instanceof Error ? error.message : error, (error as { cause?: { code?: string } }).cause?.code ?? '');
     return { rows: [], periods: [], failed: true };
   }
 }

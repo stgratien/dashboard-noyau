@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * loadSocialData against an in-memory fake of the Supabase client, with the page visitors turned on: the readings of the displayed and
+ * loadSocialData against an in-memory fake of the Supabase client, with the company sizes turned on: the readings of the displayed and
  * the compared period are read by their exact dates, and only the ones that completed (a synced reading) come back with their values.
  */
 type Row = Record<string, unknown>;
@@ -37,7 +37,7 @@ vi.mock('@supabase/supabase-js', () => {
   return { createClient: () => client };
 });
 
-// Neutral configuration with the page visitors on (the LinkedIn page source is part of it).
+// Neutral configuration with the company sizes on.
 vi.mock('@/client/config', async () => (await import('@/test/fixtures/neutral-client')).neutralClientModule({ features: { pageAudience: true } }));
 
 import { loadSocialData, resetSocialDataCache } from '@/lib/social-data.server';
@@ -99,6 +99,22 @@ describe('loadSocialData: page visitors', () => {
     expect(pageAudience.periods.map(p => p.period_start)).toEqual(['2026-07-01']);
     expect(pageAudience.periods[0]?.returned_count).toBe(0);
     expect(pageAudience.rows).toEqual([]);
+  });
+
+  it('keeps the two dimensions apart: a completed period row of one does not unlock the values of the other', async () => {
+    state.tables['social_page_audience_periods'] = [periodRow('2026-07-01', '2026-09-30')];
+    state.tables['social_page_audience'] = [
+      valueRow('2026-07-01', '2026-09-30', 'SIZE_11_TO_50', 1000),
+      { ...valueRow('2026-07-01', '2026-09-30', 'SIZE_1', 50), dimension: 'followersCompanySize' },
+    ];
+    const first = await loadSocialData({ period, comparison });
+    expect(first.pageAudience.rows.map(r => `${r.dimension}|${r.label}`)).toEqual(['companySize|SIZE_11_TO_50']);
+    // Once the followers' own period row exists, their values come back, next to the visitors'.
+    state.tables['social_page_audience_periods'] = [periodRow('2026-07-01', '2026-09-30'), periodRow('2026-07-01', '2026-09-30', { dimension: 'followersCompanySize' })];
+    resetSocialDataCache();
+    const both = await loadSocialData({ period, comparison });
+    expect(both.pageAudience.periods.map(p => p.dimension).sort()).toEqual(['companySize', 'followersCompanySize']);
+    expect(both.pageAudience.rows.map(r => `${r.dimension}|${r.label}`).sort()).toEqual(['companySize|SIZE_11_TO_50', 'followersCompanySize|SIZE_1']);
   });
 
   it('ignores a dimension it does not know and never asks the browser-facing client for the server-only attempt date', async () => {

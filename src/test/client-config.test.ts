@@ -42,10 +42,11 @@ describe("client configuration", () => {
     expect(defineClient({ ...clientV1, sources: ["linkedin", "linkedin_organic"], features: { adAudience: true } }).features.adAudience).toBe(true);
     expect(() => defineClient({ ...clientV1, sources: ["linkedin_organic"], features: { adAudience: true } })).toThrow(/adAudience.*linkedin/);
   });
-  it("keeps the page visitors off by default and requires the LinkedIn page source when they are on", () => {
+  it("keeps the company sizes off by default and requires the LinkedIn tab when they are on", () => {
     expect(defineClient(clientV1).features.pageAudience).toBe(false);
     expect(defineClient({ ...clientV1, sources: ["linkedin_organic"], features: { pageAudience: true } }).features.pageAudience).toBe(true);
-    expect(() => defineClient({ ...clientV1, sources: ["linkedin"], features: { pageAudience: true } })).toThrow(/pageAudience.*linkedin_organic/);
+    expect(defineClient({ ...clientV1, sources: ["linkedin"], features: { pageAudience: true } }).features.pageAudience).toBe(true);
+    expect(() => defineClient({ ...clientV1, sources: ["tiktok"], networks: ["tiktok"], features: { pageAudience: true } })).toThrow(/pageAudience.*LinkedIn/);
   });
   it("shows the Global tab only with several network tabs, unless features.global says otherwise", () => {
     expect(defineClient(clientV1).features.global).toBe(false);

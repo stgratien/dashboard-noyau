@@ -3,9 +3,8 @@ import { HISTORY_START, THUMBNAIL_BUCKET, type WindsorSource } from "@/lib/winds
 import { activeSources, sourceAccount } from "@/lib/windsor-accounts.server";
 import { client } from "@/lib/client";
 import { dayNumber, isoFromDay, lastDays, adAudiencePeriods, EDITIONS, type Period } from "@/lib/dashboard-periods";
-import { paidMetrics, organicMetrics, mapPost, isVideoType, numberValue, SOURCE_PLATFORMS, AUDIENCE_SPECS, audienceFields, audienceValues, postRefFromAd, postIdFromAd, STORY_FIELDS, STORY_CORE_FIELDS, mapStory, mergeStory, adAudienceFields, adAudienceValues, adAudienceFinal, nextAdAudiencePull, pageAudienceFields, pageAudienceValues, nextPageAudiencePull, type AdAudienceState, type MappedStory, type RawRow, type Metrics } from "@/lib/windsor-mapping";
+import { paidMetrics, organicMetrics, mapPost, isVideoType, numberValue, SOURCE_PLATFORMS, AUDIENCE_SPECS, audienceFields, audienceValues, postRefFromAd, postIdFromAd, STORY_FIELDS, STORY_CORE_FIELDS, mapStory, mergeStory, adAudienceFields, adAudienceValues, adAudienceFinal, nextAdAudiencePull, type AdAudienceState, type MappedStory, type RawRow, type Metrics } from "@/lib/windsor-mapping";
 import { adAudienceKey, type AdAudienceDimension } from "@/lib/ad-audience";
-import { pageAudienceKey, type PageAudienceDimension } from "@/lib/page-audience";
 import { STORY_MAX_GAP_MINUTES } from "@/lib/social-stories";
 import type { Json } from "@/integrations/supabase/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -321,11 +320,9 @@ export async function processImport(key: string) {
   // Aucune importation en attente : le passage (toutes les 3 minutes) relève les stories Instagram si le dernier relevé date de plus de 3 h.
   if (!job) {
     const stories = await syncStoriesWhenDue(key);
-    // Un seul appel Windsor par passage (le cron attend 170 s) : l'audience sponsorisée n'est relevée que si les stories ne l'ont pas été,
-    // les visiteurs de la page que si ni les stories ni l'audience sponsorisée ne l'ont été.
+    // Un seul appel Windsor par passage (le cron attend 170 s) : l'audience sponsorisée n'est relevée que si les stories ne l'ont pas été.
     const adAudience = client.features.adAudience && "skipped" in stories ? await syncAdAudienceWhenDue(key) : undefined;
-    const pageAudience = client.features.pageAudience && "skipped" in stories && (!adAudience || "skipped" in adAudience) ? await syncPageAudienceWhenDue(key) : undefined;
-    return { done: true, stories, ...(adAudience ? { adAudience } : {}), ...(pageAudience ? { pageAudience } : {}) };
+    return { done: true, stories, ...(adAudience ? { adAudience } : {}) };
   }
   // Source retirée de la configuration depuis la mise en file : le job est clos sans appel à Windsor (aucun statut d'erreur durable).
   if (!(client.sources as string[]).includes(job.source)) {
@@ -534,85 +531,6 @@ export async function syncAdAudience(key: string, request: { dimension: AdAudien
   } catch (error) {
     const message = error instanceof Error ? error.message : "Relevé de l’audience sponsorisée interrompu";
     console.warn(`Audience sponsorisée : ${message}`);
-    return { success: false, dimension, message };
-  }
-}
-
-const PAGE_AUDIENCE_PLATFORM = "linkedin";
-const PAGE_AUDIENCE_KEYS = "platform,dimension,period_start,period_end";
-
-/**
- * Prochain relevé des visiteurs de la page à faire, un par passage : les trimestres (et éditions) terminés, du plus récent au plus ancien, découpage par découpage
- * (mêmes délais que l'audience sponsorisée : voir adAudienceDue). Sans la fonction activée dans la configuration du client, ou sans les tables (migration 0016), rien n'est tenté.
- */
-export async function syncPageAudienceWhenDue(key: string) {
-  if (!client.features.pageAudience) return { skipped: true, reason: "Visiteurs de la page non activés" };
-  try {
-    const stored = await optionalDb().from("social_page_audience_periods").select("platform,dimension,period_start,period_end,is_final,last_attempt_at,synced_at").eq("platform", PAGE_AUDIENCE_PLATFORM).limit(1000);
-    if (stored.error) return { skipped: true, reason: "tables des visiteurs de la page absentes" };
-    const states = new Map<string, AdAudienceState>();
-    for (const r of stored.data ?? [])
-      states.set(pageAudienceKey(String(r.platform), String(r.dimension), String(r.period_start), String(r.period_end)), {
-        syncedAt: r.synced_at ? String(r.synced_at) : null, lastAttemptAt: r.last_attempt_at ? String(r.last_attempt_at) : null, final: r.is_final === true,
-      });
-    const next = nextPageAudiencePull(adAudiencePeriods(parisDay()), states, new Date(), PAGE_AUDIENCE_PLATFORM);
-    if (!next) return { skipped: true, reason: "relevés à jour" };
-    return await syncPageAudience(key, next);
-  } catch (error) {
-    console.warn(`Visiteurs de la page : relevé impossible (${error instanceof Error ? error.message : "erreur"})`);
-    return { skipped: true, reason: "erreur" };
-  }
-}
-
-/**
- * Relève un découpage des visiteurs de la page (pages vues par taille d'entreprise) sur une période exacte : les valeurs (les 50 plus vues) puis, EN DERNIER, la ligne du relevé,
- * seule preuve que le réseau a répondu pour cette période (sans elle la section affiche « Donnée non disponible »). L'essai est noté avant l'appel à Windsor.
- * Une réponse vide n'est JAMAIS comptée : rien ne prouve une absence de visites (historique que le réseau ne fournit plus, connecteur muet), « aucune visite » serait inventé ;
- * la tentative est notée, le relevé précédent reste intact. Avant d'écrire, la ligne de la période est rouverte (synced_at vide, plus définitive) : une réécriture interrompue
- * ne laisse jamais lire un mélange d'anciennes et de nouvelles valeurs. Les valeurs qui ne sont plus renvoyées sont retirées, une à une.
- * N'écrit jamais l'état de synchronisation des comptes et ne le fait jamais échouer.
- */
-export async function syncPageAudience(key: string, request: { dimension: PageAudienceDimension; start: string; end: string }) {
-  if (!client.features.pageAudience) return { skipped: true, reason: "Visiteurs de la page non activés" };
-  const { dimension, start, end } = request;
-  const table = optionalDb();
-  const at = new Date(), stamp = at.toISOString();
-  const scope = { platform: PAGE_AUDIENCE_PLATFORM, dimension, period_start: start, period_end: end };
-  try {
-    const attempt = await table.from("social_page_audience_periods").upsert({ ...scope, last_attempt_at: stamp }, { onConflict: PAGE_AUDIENCE_KEYS });
-    if (attempt.error) throw new Error("Tables des visiteurs de la page absentes (migration 0016)");
-    const values = pageAudienceValues(dimension, await fetchRows("linkedin_organic", { start, end }, pageAudienceFields(dimension), key));
-    if (values.returned === 0) {
-      console.warn(`Visiteurs de la page : aucune valeur renvoyée pour ${dimension} ${start} → ${end}, relevé non compté`);
-      return { success: false, dimension, message: "Aucune valeur renvoyée : relevé non compté" };
-    }
-    const rows = values.rows.map((r) => ({ ...scope, label: r.label, views: r.views, synced_at: stamp }));
-    // Le réseau a répondu : le relevé précédent (s'il y en a un) est retiré pendant la réécriture, pour qu'une écriture interrompue ne laisse jamais lire un mélange d'anciennes et de nouvelles
-    // valeurs (la période redevient « non relevée » jusqu'à la reprise, qui ne tarde pas : elle n'est plus définitive).
-    const reopened = await table.from("social_page_audience_periods").upsert({ ...scope, synced_at: null, is_final: false, last_attempt_at: stamp }, { onConflict: PAGE_AUDIENCE_KEYS });
-    if (reopened.error) throw new Error("Enregistrement du relevé impossible");
-    for (let i = 0; i < rows.length; i += 200) {
-      const saved = await table.from("social_page_audience").upsert(rows.slice(i, i + 200), { onConflict: `${PAGE_AUDIENCE_KEYS},label` });
-      if (saved.error) throw new Error("Enregistrement des visiteurs de la page impossible");
-    }
-    const old = await table.from("social_page_audience").select("label").match(scope).limit(1000);
-    if (old.error) throw new Error("Lecture des visiteurs de la page impossible");
-    const kept = new Set(rows.map((r) => r.label));
-    const stale = (old.data ?? []).map((r) => String(r.label)).filter((label) => !kept.has(label));
-    // Un libellé à la fois (égalité) : une liste « in » ne protège pas les guillemets ni les barres obliques inverses d'un libellé.
-    for (const label of stale) {
-      const removed = await table.from("social_page_audience").delete().match(scope).eq("label", label);
-      if (removed.error) throw new Error("Nettoyage des visiteurs de la page impossible");
-    }
-    const counted = await table.from("social_page_audience_periods").upsert(
-      { ...scope, returned_count: values.returned, total_views: values.totalViews, is_final: adAudienceFinal(end, at), last_attempt_at: stamp, synced_at: stamp },
-      { onConflict: PAGE_AUDIENCE_KEYS },
-    );
-    if (counted.error) throw new Error("Enregistrement du relevé impossible");
-    return { success: true, dimension, start, end, values: rows.length, returned: values.returned };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Relevé des visiteurs de la page interrompu";
-    console.warn(`Visiteurs de la page : ${message}`);
     return { success: false, dimension, message };
   }
 }
