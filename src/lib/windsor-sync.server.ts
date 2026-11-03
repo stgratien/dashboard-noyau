@@ -2,8 +2,9 @@ import { supabaseAdmin as db } from "@/integrations/supabase/client.server";
 import { HISTORY_START, THUMBNAIL_BUCKET, type WindsorSource } from "@/lib/windsor-config";
 import { activeSources, sourceAccount } from "@/lib/windsor-accounts.server";
 import { client } from "@/lib/client";
-import { dayNumber, isoFromDay, lastDays, EDITIONS, type Period } from "@/lib/dashboard-periods";
-import { paidMetrics, organicMetrics, mapPost, isVideoType, numberValue, SOURCE_PLATFORMS, AUDIENCE_SPECS, audienceFields, audienceValues, postRefFromAd, postIdFromAd, STORY_FIELDS, STORY_CORE_FIELDS, mapStory, mergeStory, type MappedStory, type RawRow, type Metrics } from "@/lib/windsor-mapping";
+import { dayNumber, isoFromDay, lastDays, adAudiencePeriods, EDITIONS, type Period } from "@/lib/dashboard-periods";
+import { paidMetrics, organicMetrics, mapPost, isVideoType, numberValue, SOURCE_PLATFORMS, AUDIENCE_SPECS, audienceFields, audienceValues, postRefFromAd, postIdFromAd, STORY_FIELDS, STORY_CORE_FIELDS, mapStory, mergeStory, adAudienceFields, adAudienceValues, adAudienceFinal, nextAdAudiencePull, type AdAudienceState, type MappedStory, type RawRow, type Metrics } from "@/lib/windsor-mapping";
+import { adAudienceKey, type AdAudienceDimension } from "@/lib/ad-audience";
 import { STORY_MAX_GAP_MINUTES } from "@/lib/social-stories";
 import type { Json } from "@/integrations/supabase/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -317,7 +318,12 @@ export async function processImport(key: string) {
   const claim = await db.rpc("claim_social_import_job");
   const job = claim.data?.[0];
   // Aucune importation en attente : le passage (toutes les 3 minutes) relève les stories Instagram si le dernier relevé date de plus de 3 h.
-  if (!job) return { done: true, stories: await syncStoriesWhenDue(key) };
+  if (!job) {
+    const stories = await syncStoriesWhenDue(key);
+    // Un seul appel Windsor par passage (le cron attend 170 s) : l'audience sponsorisée n'est relevée que si les stories ne l'ont pas été.
+    const adAudience = client.features.adAudience && "skipped" in stories ? await syncAdAudienceWhenDue(key) : undefined;
+    return { done: true, stories, ...(adAudience ? { adAudience } : {}) };
+  }
   // Source retirée de la configuration depuis la mise en file : le job est clos sans appel à Windsor (aucun statut d'erreur durable).
   if (!(client.sources as string[]).includes(job.source)) {
     await db.from("social_import_jobs").update({ state: "done", finished_at: new Date().toISOString(), error_message: "Source désactivée" }).eq("id", job.id);
@@ -439,6 +445,93 @@ export async function syncStories(key: string) {
     const message = error instanceof Error ? error.message : "Relevé des stories interrompu";
     console.warn(`Stories : ${message}`);
     return { success: false, message };
+  }
+}
+
+const AD_AUDIENCE_PLATFORM = "linkedin";
+const AD_AUDIENCE_KEYS = "platform,dimension,period_start,period_end";
+
+/**
+ * Prochain relevé d'audience sponsorisée à faire, un par passage : les trimestres (et éditions) terminés, du plus récent au plus ancien, découpage par découpage.
+ * Chaque relevé n'est refait qu'à l'issue d'un délai (voir adAudienceDue) : un découpage refusé par le connecteur est retenté plus tard et ne bloque pas les autres.
+ * Sans la fonction activée dans la configuration du client, ou sans les tables (migration 0015), rien n'est tenté.
+ */
+export async function syncAdAudienceWhenDue(key: string) {
+  if (!client.features.adAudience) return { skipped: true, reason: "Audience sponsorisée non activée" };
+  try {
+    const stored = await optionalDb().from("social_ad_audience_periods").select("platform,dimension,period_start,period_end,is_final,last_attempt_at,synced_at").eq("platform", AD_AUDIENCE_PLATFORM).limit(1000);
+    if (stored.error) return { skipped: true, reason: "tables d’audience sponsorisée absentes" };
+    const states = new Map<string, AdAudienceState>();
+    for (const r of stored.data ?? [])
+      states.set(adAudienceKey(String(r.platform), String(r.dimension), String(r.period_start), String(r.period_end)), {
+        syncedAt: r.synced_at ? String(r.synced_at) : null, lastAttemptAt: r.last_attempt_at ? String(r.last_attempt_at) : null, final: r.is_final === true,
+      });
+    const next = nextAdAudiencePull(adAudiencePeriods(parisDay()), states, new Date(), AD_AUDIENCE_PLATFORM);
+    if (!next) return { skipped: true, reason: "relevés à jour" };
+    return await syncAdAudience(key, next);
+  } catch (error) {
+    console.warn(`Audience sponsorisée : relevé impossible (${error instanceof Error ? error.message : "erreur"})`);
+    return { skipped: true, reason: "erreur" };
+  }
+}
+
+/**
+ * Relève un découpage de l'audience sponsorisée sur une période exacte : les valeurs (les 50 plus diffusées) puis, EN DERNIER, la ligne du relevé,
+ * seule preuve que le réseau a répondu pour cette période (sans elle la section affiche « Donnée non disponible »). L'essai est noté avant l'appel à Windsor.
+ * Une réponse vide n'est comptée comme « aucune diffusion » que si les impressions payantes stockées de la période sont connues (une ligne sur chaque jour) et nulles : sinon elle ne prouve rien
+ * (historique que le réseau ne fournit plus, connecteur muet, période en partie couverte) et n'est pas comptée. Avant d'écrire, la ligne de la période est rouverte (synced_at vide, plus définitive) :
+ * une réécriture interrompue ne laisse jamais lire un mélange d'anciennes et de nouvelles valeurs. Les valeurs qui ne sont plus renvoyées sont retirées, une à une.
+ * Ne fait jamais échouer la synchronisation des comptes.
+ */
+export async function syncAdAudience(key: string, request: { dimension: AdAudienceDimension; start: string; end: string }) {
+  if (!client.features.adAudience) return { skipped: true, reason: "Audience sponsorisée non activée" };
+  const { dimension, start, end } = request;
+  const table = optionalDb();
+  const at = new Date(), stamp = at.toISOString();
+  const scope = { platform: AD_AUDIENCE_PLATFORM, dimension, period_start: start, period_end: end };
+  try {
+    const attempt = await table.from("social_ad_audience_periods").upsert({ ...scope, last_attempt_at: stamp }, { onConflict: AD_AUDIENCE_KEYS });
+    if (attempt.error) throw new Error("Tables d’audience sponsorisée absentes (migration 0015)");
+    const values = adAudienceValues(dimension, await fetchRows("linkedin", { start, end }, adAudienceFields(dimension), key));
+    if (values.returned === 0) {
+      const paidDays = await table.from("social_daily").select("day,metrics").eq("platform", AD_AUDIENCE_PLATFORM).eq("source", "linkedin").gte("day", start).lte("day", end).limit(1000);
+      // Connues = une ligne payante stockée sur CHAQUE jour de la période (comme les totaux : une période en partie couverte n'est pas « sans diffusion »).
+      const storedDays = new Set((paidDays.data ?? []).map((r) => String(r.day).slice(0, 10)));
+      const known = !paidDays.error && storedDays.size >= dayNumber(end) - dayNumber(start) + 1;
+      const delivered = (paidDays.data ?? []).reduce((sum, r) => sum + (numberValue((r.metrics as Record<string, unknown> | null)?.["impressions"]) ?? 0), 0);
+      if (!known || delivered > 0) {
+        console.warn(`Audience sponsorisée : aucune valeur renvoyée pour ${dimension} ${start} → ${end}, relevé non compté`);
+        return { success: false, dimension, message: "Aucune valeur renvoyée : relevé non compté" };
+      }
+    }
+    const rows = values.rows.map((r) => ({ ...scope, label: r.label, impressions: r.impressions, clicks: r.clicks, synced_at: stamp }));
+    // Le réseau a répondu : le relevé précédent (s'il y en a un) est retiré pendant la réécriture, pour qu'une écriture interrompue ne laisse jamais lire un mélange d'anciennes et de nouvelles
+    // valeurs (la période redevient « non relevée » jusqu'à la reprise, qui ne tarde pas : elle n'est plus définitive).
+    const reopened = await table.from("social_ad_audience_periods").upsert({ ...scope, synced_at: null, is_final: false, last_attempt_at: stamp }, { onConflict: AD_AUDIENCE_KEYS });
+    if (reopened.error) throw new Error("Enregistrement du relevé impossible");
+    for (let i = 0; i < rows.length; i += 200) {
+      const saved = await table.from("social_ad_audience").upsert(rows.slice(i, i + 200), { onConflict: `${AD_AUDIENCE_KEYS},label` });
+      if (saved.error) throw new Error("Enregistrement de l’audience sponsorisée impossible");
+    }
+    const old = await table.from("social_ad_audience").select("label").match(scope).limit(1000);
+    if (old.error) throw new Error("Lecture de l’audience sponsorisée impossible");
+    const kept = new Set(rows.map((r) => r.label));
+    const stale = (old.data ?? []).map((r) => String(r.label)).filter((label) => !kept.has(label));
+    // Un libellé à la fois (égalité) : une liste « in » ne protège pas les guillemets ni les barres obliques inverses d'un nom d'entreprise.
+    for (const label of stale) {
+      const removed = await table.from("social_ad_audience").delete().match(scope).eq("label", label);
+      if (removed.error) throw new Error("Nettoyage de l’audience sponsorisée impossible");
+    }
+    const counted = await table.from("social_ad_audience_periods").upsert(
+      { ...scope, returned_count: values.returned, total_impressions: values.totalImpressions, total_clicks: values.totalClicks, is_final: adAudienceFinal(end, at), last_attempt_at: stamp, synced_at: stamp },
+      { onConflict: AD_AUDIENCE_KEYS },
+    );
+    if (counted.error) throw new Error("Enregistrement du relevé impossible");
+    return { success: true, dimension, start, end, values: rows.length, returned: values.returned };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Relevé de l’audience sponsorisée interrompu";
+    console.warn(`Audience sponsorisée : ${message}`);
+    return { success: false, dimension, message };
   }
 }
 

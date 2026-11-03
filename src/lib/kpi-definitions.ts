@@ -27,7 +27,7 @@ export type KpiKey =
   | 'interactions' | 'clicks' | 'engagementRate' | 'spend' | 'cpm' | 'cpc' | 'cpe' | 'cpv'
   | 'stories' | 'storyViews' | 'storyViewsPerStory' | 'storyInteractions'
   | 'videosPublished' | 'chartFormats' | 'chartAudience' | 'chartInteractions' | 'topPosts' | 'topVisibility' | 'topEngagement' | 'topCpm' | 'flopVisibility' | 'flopEngagement'
-  | 'audienceGender' | 'audienceAge' | 'audienceCountry' | 'audienceCity' | 'audienceIndustry' | 'audienceFunction' | 'audienceSeniority'
+  | 'audienceGender' | 'audienceAge' | 'audienceCountry' | 'audienceCity' | 'audienceIndustry' | 'audienceFunction' | 'audienceSeniority' | 'adAudience'
   | 'gaSpend' | 'gaImpressions' | 'gaClicks' | 'gaCtr' | 'gaCpc' | 'gaCpm' | 'gaConversions' | 'gaCostPerConversion' | 'gaVideoViews' | 'gaChart' | 'gaChannels' | 'gaCampaigns'
   | 'webSessions' | 'webUsers' | 'webPageviews' | 'webDuration' | 'webBounce' | 'webChart';
 
@@ -89,6 +89,7 @@ export function definition(key: KpiKey, p?: PlatformId | 'all'): string {
     case 'audienceIndustry': return 'Top 10 des secteurs d’activité des abonnés LinkedIn (valeur actuelle).';
     case 'audienceFunction': return 'Top 10 des fonctions des abonnés LinkedIn (valeur actuelle).';
     case 'audienceSeniority': return 'Niveaux d’ancienneté des abonnés LinkedIn (valeur actuelle).';
+    case 'adAudience': return 'Profil des personnes touchées par les publicités (fonction, poste, secteur d’activité, entreprise, niveau hiérarchique, lieu), pour un trimestre ou une édition terminés : le réseau ne le fournit que pour une période entière, relevée une fois la période terminée. Impressions et clics de chaque valeur (tous les clics sur les publicités, comme dans le gestionnaire de publicités du réseau, pas seulement ceux vers un lien) ; taux de clic = clics ÷ impressions. Au plus 50 valeurs, les plus diffusées. Une valeur absente de la période comparée reste inconnue (« — »), jamais zéro. Hors des totaux : ces personnes sont déjà comptées dans les impressions payantes.';
     case 'webSessions': return 'Sessions sur le site (Google Analytics non connecté).';
     case 'webUsers': return 'Utilisateurs uniques (Google Analytics non connecté).';
     case 'webPageviews': return 'Pages vues (Google Analytics non connecté).';

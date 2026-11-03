@@ -70,6 +70,13 @@ describe('loadSocialData: organic ↔ paid linking', () => {
     expect(r.unusableStatMonths).toEqual(['linkedin:2024-04']);
   });
 
+  it('does not read the sponsored audience when the client has not turned it on', async () => {
+    // The neutral configuration leaves the feature off: a read of its tables would fail here, and the loader would report it.
+    state.failOn = (table) => table.startsWith('social_ad_audience');
+    const r = await loadSocialData({ period, comparison });
+    expect(r.adAudience).toEqual({ rows: [], periods: [], failed: false });
+  });
+
   it('does not keep in the cache a result whose post statistics could not be read', async () => {
     process.env['SOCIAL_DATA_CACHE_MS'] = '60000';
     const stats = (impressions: number) => ({ metrics: { impressions, likes: 50, comments: 2, shares: 1 } });

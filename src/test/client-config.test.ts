@@ -12,7 +12,7 @@ describe("client configuration", () => {
   it("still accepts the frozen minimal v1 configuration, new keys being optional with documented defaults", () => {
     const c = defineClient(clientV1);
     expect(c.networks).toEqual(["instagram"]);
-    expect(c.features).toEqual({ googleAds: true, youtube: true, global: false });
+    expect(c.features).toEqual({ googleAds: true, youtube: true, global: false, adAudience: false });
     expect(c.events).toEqual({ editions: [], groupLabel: "Éditions" });
     expect(c.data).toEqual({ start: "2024-01-01", manualOrganicFirst: [] });
     expect(c.report.google).toBeNull();
@@ -37,6 +37,11 @@ describe("client configuration", () => {
     expect(defineClient({ ...clientV1, sources: ["facebook"] }).networks).toEqual(["facebook", "instagram"]);
   });
 
+  it("keeps the sponsored audience off by default and requires the LinkedIn Ads source when it is on", () => {
+    expect(defineClient(clientV1).features.adAudience).toBe(false);
+    expect(defineClient({ ...clientV1, sources: ["linkedin", "linkedin_organic"], features: { adAudience: true } }).features.adAudience).toBe(true);
+    expect(() => defineClient({ ...clientV1, sources: ["linkedin_organic"], features: { adAudience: true } })).toThrow(/adAudience.*linkedin/);
+  });
   it("shows the Global tab only with several network tabs, unless features.global says otherwise", () => {
     expect(defineClient(clientV1).features.global).toBe(false);
     expect(defineClient({ ...clientV1, sources: ["linkedin_organic", "tiktok"] }).features.global).toBe(true);

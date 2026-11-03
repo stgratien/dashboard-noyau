@@ -3,16 +3,26 @@ import { authenticateCronRequest } from "@/integrations/supabase/cron-auth";
 import { z } from "zod";
 import type { WindsorSource } from "@/lib/windsor-config";
 import { client } from "@/lib/client";
+import { AD_AUDIENCE_DIMENSIONS } from "@/lib/ad-audience";
+
+const AD_AUDIENCE_KEYS = AD_AUDIENCE_DIMENSIONS.map((d) => d.key) as [(typeof AD_AUDIENCE_DIMENSIONS)[number]["key"], ...(typeof AD_AUDIENCE_DIMENSIONS)[number]["key"][]];
 export const Route = createFileRoute("/api/public/windsor-sync")({
   server: { handlers: { POST: async ({ request }) => {
     const denied = await authenticateCronRequest(request);
     if (denied) return denied;
-    const body = z.object({ action: z.enum(["enqueue", "process", "nightly", "sync", "ads", "postAds", "adCreatives", "audience", "stories"]), source: z.string().refine(s => (client.sources as string[]).includes(s)).optional(), start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).safeParse(await request.json());
+    const body = z.object({ action: z.enum(["enqueue", "process", "nightly", "sync", "ads", "postAds", "adCreatives", "audience", "stories", "adAudience"]), dimension: z.enum(AD_AUDIENCE_KEYS).optional(), source: z.string().refine(s => (client.sources as string[]).includes(s)).optional(), start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).safeParse(await request.json());
     if (!body.success) return Response.json({ error: "Invalid request" }, { status: 400 });
     const key = process.env['WINDSOR_API_KEY'] ?? process.env['WINDSOR'];
     if (!key) return Response.json({ error: "Clé Windsor non configurée" }, { status: 503 });
     const sync = await import("@/lib/windsor-sync.server");
     if (body.data.action === "stories") return Response.json(await sync.syncStories(key));
+    // Sans paramètre : le prochain relevé dû, comme le passage du cron ; avec découpage et dates : ce relevé précis, même déjà fait (relance à la main).
+    if (body.data.action === "adAudience") {
+      const { dimension, start, end } = body.data;
+      if (!dimension && !start && !end) return Response.json(await sync.syncAdAudienceWhenDue(key));
+      if (!dimension || !start || !end || start > end) return Response.json({ error: "Invalid range" }, { status: 400 });
+      return Response.json(await sync.syncAdAudience(key, { dimension, start, end }));
+    }
     if (body.data.action === "audience") {
       if (!body.data.source) return Response.json({ error: "Invalid source" }, { status: 400 });
       return Response.json(await sync.syncAudience(body.data.source as WindsorSource, key));

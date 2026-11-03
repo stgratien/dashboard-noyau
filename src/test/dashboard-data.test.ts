@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { PLATFORMS, getSeries, getPosts, blendedTotals, allNetworkTotals, followersAt } from "../lib/dashboard-data";
-import { allTimeShortcut, DATA_START, lastDays, previousPeriod, previousEdition, periodDays, periodShortcuts, periodShortcutGroups, comparisonFor, comparisonChoice, twoYearsAvailable, comparisonEditions, EDITIONS, todayISO, yesterdayISO } from "../lib/dashboard-periods";
+import { adAudiencePeriods, allTimeShortcut, DATA_START, lastDays, previousPeriod, previousEdition, periodDays, periodShortcuts, periodShortcutGroups, comparisonFor, comparisonChoice, twoYearsAvailable, comparisonEditions, EDITIONS, todayISO, yesterdayISO } from "../lib/dashboard-periods";
 
 // Configuration neutre : les éditions et le début des données ne viennent pas du client de ce dépôt (les faits propres au client se testent dans le dossier src/client/tests de son dépôt).
 vi.mock("@/client/config", async () => (await import("@/test/fixtures/neutral-client")).neutralClientModule());
@@ -88,6 +88,29 @@ describe("dashboard periods", () => {
     expect(allTimeShortcut("2026-10-20")).toEqual({ name: "Toute la période", start: DATA_START, end: "2026-10-19" });
     expect(DATA_START).toBe("2023-06-05");
     expect(periodShortcutGroups("2026-10-20").flatMap((g) => g.items.map((i) => i.name))).not.toContain("Toute la période");
+  });
+  it("plans the sponsored audience on closed quarters and editions only, newest first, with the exact shortcut dates", () => {
+    const planned = adAudiencePeriods("2026-10-20");
+    expect(planned.slice(0, 3).map((p) => p.name)).toEqual(["T3 2026", "T2 2026", "T1 2026"]);
+    expect(planned[0]).toEqual({ name: "T3 2026", start: "2026-07-01", end: "2026-09-30" });
+    // Un trimestre en cours n'est jamais relevé, ni le jour de sa fin (le dernier jour complet est la veille).
+    expect(planned.map((p) => p.name)).not.toContain("T4 2026");
+    expect(adAudiencePeriods("2026-09-30")[0]?.name).toBe("T2 2026");
+    expect(adAudiencePeriods("2026-10-01")[0]?.name).toBe("T3 2026");
+    // Les dates sont celles des raccourcis de période (et de leurs comparaisons), sans rognage au début des données.
+    const shortcut = periodShortcuts("2026-10-20").find((p) => p.name === "T3 2026");
+    expect(shortcut && { start: shortcut.start, end: shortcut.end }).toEqual({ start: "2026-07-01", end: "2026-09-30" });
+    expect(comparisonFor({ start: "2026-07-01", end: "2026-09-30", comparisonKind: "quarter" }, "two-years").period).toEqual({ start: "2024-07-01", end: "2024-09-30" });
+    expect(comparisonFor({ start: "2026-07-01", end: "2026-09-30", comparisonKind: "quarter" }, "previous").period).toEqual({ start: "2026-04-01", end: "2026-06-30" });
+    // Le premier trimestre est celui qui finit après le début des données (T2 2023 : le 05/06/2023 est dans ce trimestre).
+    expect(planned.at(-1)?.name).toBe("T2 2023");
+    expect(planned.some((p) => p.name === "T1 2023")).toBe(false);
+    expect(planned.some((p) => p.name === "T2 2023")).toBe(true);
+    // Les éditions terminées sont relevées, pas celle qui est dans le futur ; une édition qui coïncide avec un trimestre n'est comptée qu'une fois.
+    expect(planned.map((p) => p.name)).toContain("Edition 2025");
+    expect(planned.map((p) => p.name)).not.toContain("Edition 2027");
+    expect(new Set(planned.map((p) => `${p.start}|${p.end}`)).size).toBe(planned.length);
+    expect(planned.map((p) => p.end)).toEqual([...planned.map((p) => p.end)].sort().reverse());
   });
   it("compares with a custom period as chosen, whatever the main period", () => {
     const custom = { start: "2025-01-01", end: "2025-03-31" };

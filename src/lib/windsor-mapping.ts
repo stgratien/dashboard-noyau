@@ -1,6 +1,7 @@
 import type { PlatformId } from "@/lib/dashboard-data";
 import type { WindsorSource } from "@/lib/windsor-config";
 import { SOURCE_PLATFORMS } from "@/core/client-config";
+import { AD_AUDIENCE_DIMENSIONS, adAudienceKey, type AdAudienceDimension, type AdAudienceRow } from "@/lib/ad-audience";
 export type RawRow = Record<string, unknown>;
 export type Metrics = Record<string, number | null>;
 export const numberValue = (v: unknown): number | null => v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v);
@@ -140,4 +141,78 @@ export function mergeStory(old: Pick<MappedStory, "views" | "reach" | "replies" 
     views: high(old?.views, next.views), reach: high(old?.reach, next.reach), replies: high(old?.replies, next.replies),
     shares: high(old?.shares, next.shares), interactions: high(old?.interactions, next.interactions),
   };
+}
+
+/**
+ * Audience sponsorisée (connecteur « linkedin », LinkedIn Ads) : une requête par découpage, sur la période exacte, avec le seul champ de profil
+ * et les mesures (ni `date`, ni compte, qui feraient éclater les lignes). Les noms de champs sont ceux du connecteur : un champ refusé fait échouer
+ * la lecture du découpage (jamais celle des autres), qui sera retentée plus tard.
+ */
+export const AD_AUDIENCE_FIELD: Record<AdAudienceDimension, string> = {
+  function: "member_job_function", title: "member_job_title", industry: "member_industry",
+  company: "member_company_name", seniority: "member_seniority", region: "member_region",
+};
+export const adAudienceFields = (dimension: AdAudienceDimension) => [AD_AUDIENCE_FIELD[dimension], "impressions", "clicks"].join(",");
+/** Au plus ce nombre de valeurs par découpage et par période est stocké (les plus diffusées) : un classement de plusieurs centaines d'entreprises ne s'affiche pas. */
+export const AD_AUDIENCE_MAX_ROWS = 50;
+
+export type AdAudienceValues = { rows: AdAudienceRow[]; returned: number; totalImpressions: number; totalClicks: number | null };
+/**
+ * Valeurs d'un découpage : libellés nettoyés, doublons additionnés, lignes sans libellé ou sans impression ignorées (jamais de zéro inventé), puis
+ * classement par impressions (clics, libellé à égalité) limité à `max`. `returned` et les totaux portent sur TOUTES les valeurs lues, avant la limite.
+ * Les clics d'une valeur sont inconnus (null) dès qu'une de ses lignes n'en fournit pas ; le total des clics l'est dès qu'une valeur l'est.
+ */
+export function adAudienceValues(dimension: AdAudienceDimension, rows: RawRow[], max = AD_AUDIENCE_MAX_ROWS): AdAudienceValues {
+  const field = AD_AUDIENCE_FIELD[dimension];
+  const merged = new Map<string, { impressions: number; clicks: number | null }>();
+  for (const row of rows) {
+    const label = String(row[field] ?? "").replace(/\s+/g, " ").trim();
+    const impressions = numberValue(row["impressions"]);
+    if (!label || impressions == null || impressions <= 0) continue;
+    const clicks = numberValue(row["clicks"]);
+    const old = merged.get(label);
+    merged.set(label, { impressions: (old?.impressions ?? 0) + impressions, clicks: old ? nullableSum([old.clicks, clicks]) : clicks });
+  }
+  const all = [...merged].map(([label, v]) => ({ label, ...v }));
+  const clicksOf = (r: AdAudienceRow) => r.clicks ?? -1;
+  const ranked = [...all].sort((a, b) => b.impressions - a.impressions || clicksOf(b) - clicksOf(a) || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
+  return {
+    rows: ranked.slice(0, Math.max(0, max)),
+    returned: all.length,
+    totalImpressions: all.reduce((sum, r) => sum + r.impressions, 0),
+    totalClicks: nullableSum(all.map((r) => r.clicks)),
+  };
+}
+
+/** État d'un relevé d'audience sponsorisée, tel que la table des périodes le garde. */
+export type AdAudienceState = { syncedAt: string | null; lastAttemptAt: string | null; final: boolean };
+const HOUR = 3_600_000;
+/** Après une tentative, on n'en refait pas avant ce délai (un découpage refusé par le connecteur ne bloque ni les autres, ni la synchronisation). */
+export const AD_AUDIENCE_RETRY_MS = 6 * HOUR;
+/** Un relevé encore susceptible d'être révisé par le réseau est relu au plus une fois par ce délai. */
+export const AD_AUDIENCE_REFRESH_MS = 24 * HOUR;
+/** Le réseau révise ses chiffres un certain temps après la fin d'une période : un relevé fait plus de ce nombre de jours après la fin est définitif. */
+export const AD_AUDIENCE_REVISION_DAYS = 14;
+const isoMs = (value: string | null | undefined) => {
+  const ms = value ? Date.parse(value) : NaN;
+  return Number.isFinite(ms) ? ms : null;
+};
+/** Un relevé fait à `at` est-il définitif pour une période qui finit le `periodEnd` (AAAA-MM-JJ) ? */
+export const adAudienceFinal = (periodEnd: string, at: Date) => at.getTime() - Date.parse(`${periodEnd}T00:00:00Z`) > (AD_AUDIENCE_REVISION_DAYS + 1) * 24 * HOUR;
+/** Faut-il (re)lire ce découpage maintenant ? Jamais s'il est définitif ni juste après une tentative ; sinon s'il n'a jamais abouti, ou s'il peut encore être révisé et date de plus de 24 h. */
+export function adAudienceDue(state: AdAudienceState | undefined, now: Date): boolean {
+  if (state?.final) return false;
+  const attempt = isoMs(state?.lastAttemptAt);
+  if (attempt != null && now.getTime() - attempt < AD_AUDIENCE_RETRY_MS) return false;
+  const synced = isoMs(state?.syncedAt);
+  return synced == null || now.getTime() - synced >= AD_AUDIENCE_REFRESH_MS;
+}
+/** Prochain relevé à faire : le premier découpage dû, des périodes les plus récentes aux plus anciennes (`periods` est déjà dans cet ordre), les découpages dans l'ordre d'affichage. */
+export function nextAdAudiencePull(
+  periods: { start: string; end: string }[], states: Map<string, AdAudienceState>, now: Date, platform = "linkedin",
+): { dimension: AdAudienceDimension; start: string; end: string } | null {
+  for (const period of periods)
+    for (const { key } of AD_AUDIENCE_DIMENSIONS)
+      if (adAudienceDue(states.get(adAudienceKey(platform, key, period.start, period.end)), now)) return { dimension: key, start: period.start, end: period.end };
+  return null;
 }

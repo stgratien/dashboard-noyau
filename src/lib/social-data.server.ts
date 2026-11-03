@@ -3,6 +3,7 @@ import type { Database } from '@/integrations/supabase/types';
 import type { Metrics } from './windsor-mapping';
 import type { SocialDay, SocialPost, SocialAd, AdCoverage } from './social-totals';
 import { mergeStories, type SocialStory, type StoryPull } from './social-stories';
+import { isAdAudienceDimension, type AdAudienceData, type AdAudiencePeriod, type StoredAdAudienceRow } from './ad-audience';
 import { paidOnlyAds, unusableStatMonths } from './top-posts';
 import { applyRuleLinks, groupUnlinkedAds, linkAdsToPosts, parseAdNameDate, LINK_PLATFORMS, type TwinAd } from './ad-post-link';
 import { THUMBNAIL_BUCKET } from './windsor-config';
@@ -99,6 +100,51 @@ async function loadStories(db: SupabaseClient<Database>, ranges: PeriodInput[]) 
   ]);
   return { stories: mergeStories(live, history), storyPulls, storiesFailed };
 }
+const AD_AUDIENCE_ROW_COLUMNS = 'platform,dimension,period_start,period_end,label,impressions,clicks';
+const AD_AUDIENCE_PERIOD_COLUMNS = 'platform,dimension,period_start,period_end,returned_count,total_impressions,total_clicks,is_final,synced_at';
+/**
+ * Audience sponsorisée (migration 0015) : les relevés des périodes affichée et comparée, lus par leurs dates exactes (la table ne garde que des périodes entières).
+ * Sans la fonction activée dans la configuration du client, aucune lecture. Seuls les relevés aboutis sont gardés, et leurs valeurs avec eux : une valeur sans relevé
+ * abouti (écriture en cours, tentative ratée) ne prouve rien. Une table absente est un suivi non actif, sans bruit ; toute autre erreur est dite `failed`, journalisée,
+ * et le résultat n'est pas gardé en cache.
+ */
+async function loadAdAudience(db: SupabaseClient<Database>, ranges: PeriodInput[]): Promise<AdAudienceData> {
+  if (!client.features.adAudience) return { rows: [], periods: [], failed: false };
+  const optional = db as unknown as SupabaseClient;
+  const distinct = [...new Map(ranges.map(r => [`${r.start}|${r.end}`, r])).values()];
+  const periods: AdAudiencePeriod[] = [], rows: StoredAdAudienceRow[] = [];
+  try {
+    const read = await Promise.all(distinct.map(async r => ({
+      periods: await readAll((a, b) => optional.from('social_ad_audience_periods').select(AD_AUDIENCE_PERIOD_COLUMNS).eq('period_start', r.start).eq('period_end', r.end).order('platform').order('dimension').range(a, b), 'Lecture des relevés d’audience sponsorisée impossible'),
+      rows: await readAll((a, b) => optional.from('social_ad_audience').select(AD_AUDIENCE_ROW_COLUMNS).eq('period_start', r.start).eq('period_end', r.end).order('platform').order('dimension').order('label').range(a, b), 'Lecture de l’audience sponsorisée impossible'),
+    })));
+    for (const part of read) {
+      const done = new Set<string>();
+      for (const d of part.periods as Record<string, unknown>[]) {
+        if (!d['synced_at'] || !isAdAudienceDimension(d['dimension'])) continue;
+        periods.push({
+          platform: d['platform'] as AdAudiencePeriod['platform'], dimension: d['dimension'], period_start: String(d['period_start']).slice(0, 10), period_end: String(d['period_end']).slice(0, 10),
+          returned_count: toNumber(d['returned_count']), total_impressions: toNumber(d['total_impressions']), total_clicks: toNumber(d['total_clicks']),
+          is_final: d['is_final'] === true, synced_at: String(d['synced_at']),
+        });
+        done.add(`${d['platform']}|${d['dimension']}`);
+      }
+      for (const d of part.rows as Record<string, unknown>[]) {
+        const impressions = toNumber(d['impressions']);
+        if (!done.has(`${d['platform']}|${d['dimension']}`) || !isAdAudienceDimension(d['dimension']) || impressions == null) continue;
+        rows.push({
+          platform: d['platform'] as StoredAdAudienceRow['platform'], dimension: d['dimension'], period_start: String(d['period_start']).slice(0, 10), period_end: String(d['period_end']).slice(0, 10),
+          label: String(d['label']), impressions, clicks: toNumber(d['clicks']),
+        });
+      }
+    }
+    return { rows, periods, failed: false };
+  } catch (error) {
+    if (isMissingTable(error)) return { rows: [], periods: [], failed: false };
+    console.warn('social-data: lecture de l’audience sponsorisée impossible', error instanceof Error ? error.message : error, (error as { cause?: { code?: string } }).cause?.code ?? '');
+    return { rows: [], periods: [], failed: true };
+  }
+}
 const cache = new Map<string, { at: number; value: Awaited<ReturnType<typeof computeSocialData>> }>();
 /** Vide le cache (tests). */
 export const resetSocialDataCache = () => cache.clear();
@@ -120,7 +166,7 @@ export async function loadSocialData(data: { period: PeriodInput; comparison: Pe
     throw error;
   }
   // Un résultat dont la lecture des stories ou des statistiques de publications a échoué n'est pas gardé : la prochaine demande réessaie.
-  if (ttl > 0 && !value.storiesFailed && !value.statGapsFailed) {
+  if (ttl > 0 && !value.storiesFailed && !value.statGapsFailed && !value.adAudience.failed) {
     cache.set(key, { at: Date.now(), value });
     if (cache.size > 12) cache.delete(cache.keys().next().value as string);
   }
@@ -302,10 +348,11 @@ async function computeSocialData(data: { period: PeriodInput; comparison: Period
     // Paid rows were built before the creatives' images were signed: attach them now.
     for (const a of paidAds) { const c = creatives.find(x => x.platform === a.platform && x.ad_id === a.ad_id); a.thumbnail_url = c?.thumbnail_url ?? ''; }
     const { stories, storyPulls, storiesFailed } = await loadStories(db, ranges);
+    const adAudience = await loadAdAudience(db, ranges);
     const audience = await db.from('social_audience').select('platform,dimension,label,value,unit');
     if (audience.error) throw new Error('Lecture de l’audience impossible');
     const status = await db.from('social_sync_status').select('source,state,last_success_at');
     if (status.error) throw new Error('État des sources indisponible');
     const statGaps = await statGapsRead;
-    return { days:mergeFollowerHistory(mergeOrganicHistory(days,organicHistory,client.data.manualOrganicFirst),manual), posts, promotedPosts: promoted, paidAds, adLinking, ads, adCoverage, stories, storyPulls, storiesFailed, unusableStatMonths: statGaps.months, statGapsFailed: statGaps.failed, audience: audience.data, statuses: status.data };
+    return { days:mergeFollowerHistory(mergeOrganicHistory(days,organicHistory,client.data.manualOrganicFirst),manual), posts, promotedPosts: promoted, paidAds, adLinking, ads, adCoverage, stories, storyPulls, storiesFailed, adAudience, unusableStatMonths: statGaps.months, statGapsFailed: statGaps.failed, audience: audience.data, statuses: status.data };
 }

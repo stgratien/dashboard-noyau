@@ -140,6 +140,27 @@ export function periodShortcuts(today = todayISO()): (Period & { name: string })
     ),
   ];
 }
+/**
+ * Périodes dont l'audience sponsorisée est relevée : les trimestres civils terminés (la veille au plus tard, du premier jour de données à aujourd'hui)
+ * et les éditions terminées, les plus récentes d'abord. Les dates sont exactement celles des raccourcis de période et de leurs comparaisons
+ * (« Période précédente », « Il y a 2 ans »), jamais rognées au début des données : c'est ce qui permet de retrouver un relevé par ses dates.
+ */
+export function adAudiencePeriods(today = todayISO()): (Period & { name: string })[] {
+  const firstYear = Number(DATA_START.slice(0, 4));
+  const lastYear = Number(today.slice(0, 4));
+  const quarters = Array.from({ length: Math.max(0, lastYear - firstYear + 1) }, (_, i) => firstYear + i).flatMap((yy) =>
+    [1, 2, 3, 4].map((q) => ({
+      name: `T${q} ${yy}`,
+      start: `${yy}-${String((q - 1) * 3 + 1).padStart(2, "0")}-01`,
+      end: new Date(Date.UTC(yy, q * 3, 0)).toISOString().slice(0, 10),
+    })),
+  );
+  const seen = new Set<string>();
+  return [...quarters, ...EDITIONS]
+    .filter((p) => p.end < today && p.end >= DATA_START)
+    .filter((p) => !seen.has(`${p.start}|${p.end}`) && seen.add(`${p.start}|${p.end}`))
+    .sort((a, b) => b.end.localeCompare(a.end) || b.start.localeCompare(a.start));
+}
 /** « Toute la période » : du premier jour de données (DATA_START) à hier. Raccourci direct, hors des groupes dépliables. */
 export const allTimeShortcut = (today = todayISO()): Period & { name: string } => ({
   name: "Toute la période",
