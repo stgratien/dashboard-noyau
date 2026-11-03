@@ -8,7 +8,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { readSocialData } from "@/lib/social-data.functions";
 import { type RealTotals } from "@/lib/social-totals";
-import { Facebook, Instagram, LayoutGrid, Linkedin, Music2, Megaphone, Youtube, RefreshCw, Globe, Sun, Moon } from "lucide-react";
+import { Facebook, Instagram, LayoutGrid, Linkedin, Music2, Megaphone, Youtube, Globe, Sun, Moon } from "lucide-react";
 import { PLATFORMS, type PlatformId } from "@/lib/dashboard-data";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,7 @@ import { DashboardPeriodSelector } from "@/components/dashboard-period-selector"
 import { comparisonFor, comparisonInSentence, lastDays, twoYearsAvailable, yesterdayISO, formatPeriod, type Period, type ComparisonMode } from "@/lib/dashboard-periods";
 import { readGoogleAds } from "@/lib/google-ads.functions";
 import { readYoutube } from "@/lib/youtube.functions";
-import { ComparisonLabel, PeriodLine, budget, type Tab } from "@/components/dashboard/common";
+import { ComparisonLabel, PeriodLine, RefreshButton, budget, type Tab } from "@/components/dashboard/common";
 import { PlatformView } from "@/components/dashboard/platform-view";
 import { Overview } from "@/components/dashboard/overview";
 import { TabBoundary } from "@/components/dashboard/tab-boundary";
@@ -324,19 +324,15 @@ function Dashboard() {
                   }}
                 />
                 {/* Sur téléphone, la lune rejoint le bouton de période (ligne 1) ; la comparaison et « Actualiser » passent ligne 2. */}
-                <Button
-                  variant="outline"
-                  className="shadow-none max-sm:order-2"
-                  onClick={() => {
+                <RefreshButton
+                  className="max-sm:order-2"
+                  onRefresh={() => {
                     forceFresh.current = true;
                     void social.refetch();
                     if (client.features.googleAds) void google.refetch();
                     if (client.features.youtube) void youtube.refetch();
                   }}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Actualiser
-                </Button>
+                />
                 <ThemeToggle />
               </div>
             </div>

@@ -1,5 +1,6 @@
 import { createContext, useContext, type ReactNode } from "react";
-import { FileText, ImageOff, Image as ImageIcon, Images, Megaphone, MessageSquareText, Video, type LucideIcon } from "lucide-react";
+import { FileText, ImageOff, Image as ImageIcon, Images, Megaphone, MessageSquareText, RefreshCw, Video, type LucideIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { readSocialData } from "@/lib/social-data.functions";
 import { type RealTotals } from "@/lib/social-totals";
 import { coverageDescription } from "@/lib/coverage-text";
@@ -132,6 +133,15 @@ export function Kpi({
       )}
       {noteShown && <p className="mt-1 text-xs text-muted-foreground">{noteShown}</p>}
     </div>
+  );
+}
+
+/** Bouton « Actualiser » de l'en-tête : le pictogramme seul, comme la bascule de thème à côté de lui ; son nom accessible reste « Actualiser » (pas d'info-bulle). */
+export function RefreshButton({ onRefresh, className }: { onRefresh: () => void; className?: string }) {
+  return (
+    <Button type="button" variant="outline" size="icon" className={cn("shadow-none", className)} onClick={onRefresh} aria-label="Actualiser">
+      <RefreshCw />
+    </Button>
   );
 }
 
