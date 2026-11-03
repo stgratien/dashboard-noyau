@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { cardObjectId, changeObjectId, countReplacements, describeGoogleError, leftoverMarkers, MAX_REPORT_DAYS, periodLength, replaceRequests, reportFileName, reportQuery, shapeIds, textFieldMask, toneRequests, withoutObjects } from '../lib/google-report';
+
+// Configuration neutre : le nom du fichier du rapport (client.report.fileNamePrefix) et les cartes natives ne viennent pas du client de ce dépôt.
+vi.mock('@/client/config', async () => (await import('@/test/fixtures/neutral-client')).neutralClientModule());
 
 const run = (content: string) => ({ textElements: [{ textRun: { content } }] });
 
