@@ -17,6 +17,7 @@ import { comparisonFor, comparisonInSentence, lastDays, twoYearsAvailable, yeste
 import { readGoogleAds } from "@/lib/google-ads.functions";
 import { readYoutube } from "@/lib/youtube.functions";
 import { ComparisonLabel, PeriodLine, RefreshButton, budget, type Tab } from "@/components/dashboard/common";
+import { ExportMenu } from "@/components/dashboard/export-menu";
 import { PlatformView } from "@/components/dashboard/platform-view";
 import { Overview } from "@/components/dashboard/overview";
 import { TabBoundary } from "@/components/dashboard/tab-boundary";
@@ -277,6 +278,7 @@ function Dashboard() {
     if (mode === "two-years" && !twoYearsAvailable(next)) setMode("previous");
   };
 
+  const networkTab = PLATFORMS.find((x) => x.id === tab)?.id;
   const tabs = [...(client.features.global ? ["overview"] : []), ...PLATFORMS.map((p) => p.id),...(youtube.data?.lastSuccess ? ["youtube"] : []), ...(client.features.googleAds ? ["google"] : [])] as Tab[];
 
   return (
@@ -333,6 +335,10 @@ function Dashboard() {
                     if (client.features.youtube) void youtube.refetch();
                   }}
                 />
+                {/* Export (Excel, JSON) des chiffres de l'onglet réseau affiché, pour les clients qui l'activent ; pas sur Global, YouTube ni Google Ads. */}
+                {client.features.dataExport && networkTab && (
+                  <ExportMenu className="max-sm:order-2" data={social.data} p={networkTab} period={period} comparison={comparison.period} />
+                )}
                 <ThemeToggle />
               </div>
             </div>
