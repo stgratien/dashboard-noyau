@@ -1,9 +1,10 @@
 import { useMemo } from "react";
-import { realAllNetworkTotals, realBlendedTotals, type RealTotals } from "@/lib/social-totals";
+import type { RealTotals } from "@/lib/social-totals";
 import { videosNote } from "@/lib/dashboard-format";
 import { PLATFORMS, type PlatformId } from "@/lib/dashboard-data";
+import { globalTotals, networkTotals } from "@/lib/global-totals";
 import { definition, type KpiKey } from "@/lib/kpi-definitions";
-import { youtubeTotals, addYoutubeToSocial, type YoutubeData } from "@/lib/youtube";
+import type { YoutubeData } from "@/lib/youtube";
 import { comparedGlobalNote, globalPartialNote } from "@/lib/partial-note";
 import { type GoogleData, Kpi, TabNotes, type SocialData, type ViewPeriods, budget, comparablePoints, coverageDetails, prevShown, delta, eur, fmt, followerNote, pct, shown } from "@/components/dashboard/common";
 
@@ -166,26 +167,9 @@ export function Overview({
   youtube: YoutubeData | undefined;
   youtubeUnavailable: boolean;
 }) {
-  const rows = useMemo(
-    () =>
-      PLATFORMS.map(({ id: p }) => ({
-        p,
-        current: realBlendedTotals(p, data.days, data.posts, period, data.statuses, data.ads, data.adCoverage),
-        previous: realBlendedTotals(p, data.days, data.posts, comparison, data.statuses, data.ads, data.adCoverage),
-      })),
-    [data, period, comparison],
-  );
-  const g = google?.rows ?? [];
-  const t = addYoutubeToSocial(
-    realAllNetworkTotals(rows.map((row) => row.current)),
-    youtube?.lastSuccess ? youtubeTotals(youtube, g, period) : null,
-    youtubeUnavailable,
-  );
-  const o = addYoutubeToSocial(
-    realAllNetworkTotals(rows.map((row) => row.previous)),
-    youtube?.lastSuccess ? youtubeTotals(youtube, g, comparison) : null,
-    youtubeUnavailable,
-  );
+  // Les mêmes totaux servent à l'export de l'onglet (src/lib/data-export-global.ts) : ne pas les recalculer ailleurs.
+  const rows = useMemo(() => networkTotals(data, period, comparison), [data, period, comparison]);
+  const { t, o } = globalTotals(rows, google, youtube, youtubeUnavailable, period, comparison);
   // Pourquoi des cartes portent « partiel » (réseaux ou sources manquants sur la période affichée) et pourquoi des valeurs comparées portent « (partiel) » : des lignes grises par réseau,
   // jamais dans les exports ni le rapport.
   const partial = globalPartialNote(

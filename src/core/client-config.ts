@@ -85,7 +85,7 @@ export interface ClientInput {
    * LinkedIn l'« Audience sponsorisée » : les découpages démographiques des annonces LinkedIn relevés par Windsor pour des périodes calendaires entières
    * (nécessite la source `linkedin` et la migration 0015). `pageAudience` (défaut : désactivé) ajoute à l'onglet LinkedIn les « Tailles d'entreprise » : les visiteurs de la page et
    * les abonnés par taille d'entreprise, chiffres relevés dans les statistiques du réseau et chargés à la main par trimestre (le réseau ne les fournit pas par période à Windsor ;
-   * nécessite l'onglet LinkedIn et les migrations 0016 et 0017). `dataExport` (défaut : désactivé) ajoute dans l'en-tête un bouton « Exporter » (Excel, JSON) sur les onglets réseaux :
+   * nécessite l'onglet LinkedIn et les migrations 0016 et 0017). `dataExport` (défaut : désactivé) ajoute dans l'en-tête un bouton « Exporter » (Excel, JSON) sur les onglets réseaux et sur Global :
    * les chiffres de l'onglet affiché, pour la période et la comparaison choisies.
    */
   features?: { googleAds?: boolean; youtube?: boolean; global?: boolean; adAudience?: boolean; pageAudience?: boolean; dataExport?: boolean };

@@ -279,6 +279,10 @@ function Dashboard() {
   };
 
   const networkTab = PLATFORMS.find((x) => x.id === tab)?.id;
+  const exportTab = tab === "overview" ? ("overview" as const) : networkTab;
+  // L'export de Global part des mêmes lectures que l'onglet : il attend YouTube (qui entre dans le total une fois connecté), comme l'onglet affiche son chargement. Les lignes Google Ads
+  // n'entrent jamais dans les totaux de Global (le rapport n'en passe aucune non plus) : leur chargement ne retient pas le bouton.
+  const globalReadsLoading = client.features.youtube && (youtube.isLoading || youtube.isPlaceholderData);
   const tabs = [...(client.features.global ? ["overview"] : []), ...PLATFORMS.map((p) => p.id),...(youtube.data?.lastSuccess ? ["youtube"] : []), ...(client.features.googleAds ? ["google"] : [])] as Tab[];
 
   return (
@@ -335,9 +339,16 @@ function Dashboard() {
                     if (client.features.youtube) void youtube.refetch();
                   }}
                 />
-                {/* Export (Excel, JSON) des chiffres de l'onglet réseau affiché, pour les clients qui l'activent ; pas sur Global, YouTube ni Google Ads. */}
-                {client.features.dataExport && networkTab && (
-                  <ExportMenu className="max-sm:order-2" data={social.data} p={networkTab} period={period} comparison={comparison.period} />
+                {/* Export (Excel, JSON) des chiffres de l'onglet affiché (un réseau, ou Global), pour les clients qui l'activent ; pas sur YouTube ni Google Ads. */}
+                {client.features.dataExport && exportTab && (
+                  <ExportMenu
+                    className="max-sm:order-2"
+                    data={social.data}
+                    p={exportTab}
+                    period={period}
+                    comparison={comparison.period}
+                    global={tab === "overview" ? { google: google.data, youtube: youtube.isPlaceholderData ? undefined : youtube.data, youtubeUnavailable, loading: globalReadsLoading } : undefined}
+                  />
                 )}
                 <ThemeToggle />
               </div>

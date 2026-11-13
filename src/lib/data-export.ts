@@ -29,7 +29,7 @@ export type ExportRow = { values: Record<string, ExportValue>; kinds?: Record<st
 /** `plain` : une liste de rubriques à lire, pas un tableau de données (le classeur n'y met ni filtre ni volet figé). */
 export type ExportTable = { id: string; name: string; columns: ExportColumn[]; rows: ExportRow[]; plain?: true };
 export type ExportMeta = {
-  dashboard: string; network: PlatformId; networkName: string;
+  dashboard: string; network: PlatformId | "overview"; networkName: string;
   period: { start: string; end: string; name: string }; comparison: { start: string; end: string; name: string };
   generatedAt: string;
 };
@@ -39,13 +39,13 @@ export type DataExportInput = {
   data: SocialData; p: PlatformId; period: Period; comparison: Period; now?: Date;
 };
 
-const col = (key: string, label: string, kind: CellKind, width: number): ExportColumn => ({ key, label, kind, width });
-const rowOf = (values: Record<string, ExportValue>, kinds?: Record<string, CellKind>): ExportRow => (kinds ? { values, kinds } : { values });
-const finite = (n: number | null | undefined): number | null => (n == null || !Number.isFinite(n) ? null : n);
-const networkName = (p: string) => PLATFORMS.find((x) => x.id === p)?.name ?? p;
+export const col = (key: string, label: string, kind: CellKind, width: number): ExportColumn => ({ key, label, kind, width });
+export const rowOf = (values: Record<string, ExportValue>, kinds?: Record<string, CellKind>): ExportRow => (kinds ? { values, kinds } : { values });
+export const finite = (n: number | null | undefined): number | null => (n == null || !Number.isFinite(n) ? null : n);
+export const networkName = (p: string) => PLATFORMS.find((x) => x.id === p)?.name ?? p;
 
 /** Même couverture (listes `missing`) pour les deux périodes : sinon un changement de périmètre se lirait comme une performance (comparableDelta de l'écran). */
-const sameScope = (t: RealTotals, o: RealTotals, key: string) => JSON.stringify(t.missing[key] ?? []) === JSON.stringify(o.missing[key] ?? []);
+export const sameScope = (t: RealTotals, o: RealTotals, key: string) => JSON.stringify(t.missing[key] ?? []) === JSON.stringify(o.missing[key] ?? []);
 
 /** Heure de Paris d'un horodatage, « AAAA-MM-JJTHH:MM:SS » sans fuseau : c'est l'heure que lit le client (le fichier la dit dans l'en-tête de la colonne). */
 const PARIS = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
@@ -55,22 +55,23 @@ export function parisLocal(ms: number): string | null {
   return `${parts["year"]}-${parts["month"]}-${parts["day"]}T${parts["hour"]}:${parts["minute"]}:${parts["second"]}`;
 }
 
-type Unit = "count" | "euro" | "percent";
+export type Unit = "count" | "euro" | "percent";
 const UNIT_LABEL: Record<Unit, string> = { count: "nombre", euro: "€", percent: "%" };
 const UNIT_KIND: Record<Unit, CellKind> = { count: "integer", euro: "euro", percent: "percent" };
 
 /** Remarque d'un chiffre : pourquoi il est partiel (comme la mention « partiel » de l'écran), indisponible, ou provisoire. */
-function coverageRemark(t: RealTotals, o: RealTotals, key: string): string[] {
+export function coverageRemark(t: RealTotals, o: RealTotals, key: string, withCompared = true): string[] {
   const names = (platform: string) => networkName(platform);
   const own = (t.missing[key] ?? []).map((id) => coverageDescription(id, key, names, true));
   const remarks: string[] = [];
   if (own.length) remarks.push(`partiel : ${own.join(" ; ")}`);
   const theirs = o.missing[key] ?? [];
-  if (theirs.length && !sameScope(t, o, key)) remarks.push(`période comparée partielle : ${theirs.map((id) => coverageDescription(id, key, names, true)).join(" ; ")}`);
+  // La couverture de la période comparée ne se commente que si sa valeur est montrée (jamais pour « Abonnés », ni à côté d'une valeur comparée vide).
+  if (withCompared && theirs.length && !sameScope(t, o, key)) remarks.push(`période comparée partielle : ${theirs.map((id) => coverageDescription(id, key, names, true)).join(" ; ")}`);
   return remarks;
 }
 
-type Figure = {
+export type Figure = {
   section: string; label: string; unit: Unit; key: keyof RealTotals & string;
   /** `plain` : variation de l'écran sans contrôle de couverture ; `scope` : seulement à couverture égale ; `points` : écart de points d'un taux ; `none` : aucune variation. */
   mode: "plain" | "scope" | "points" | "none";
@@ -112,7 +113,42 @@ const STORY_FIGURES: { label: string; key: StoryMetric; unit: Unit }[] = [
   { label: "Impressions moy. / story", key: "viewsPerStory", unit: "count" }, { label: "Interactions des stories", key: "interactions", unit: "count" },
 ];
 
-function keyFiguresTable(input: DataExportInput, t: RealTotals, o: RealTotals): ExportTable {
+/** Une ligne de « Chiffres clés » : la valeur de la période, celle de la période comparée, la variation (masquée comme à l'écran) et la remarque (partiel, indisponible, provisoire). */
+export function figureRow(f: Figure, t: RealTotals, o: RealTotals): ExportRow {
+  const current = finite(t[f.key] as number | null | undefined), previous = finite(o[f.key] as number | null | undefined);
+  const shownPrevious = f.previous === false ? null : previous;
+  let change: number | null = null, changeUnit = "";
+  if (f.mode === "plain") change = finite(changePercent(current, previous)) ?? null;
+  else if (f.mode === "scope") change = sameScope(t, o, f.key) ? finite(changePercent(current, previous)) : null;
+  else if (f.mode === "points") change = sameScope(t, o, f.key) && current != null && previous != null ? current - previous : null;
+  if (change != null) changeUnit = f.mode === "points" ? "points" : "%";
+  // Comme l'écran (prevShown) : la couverture de la période comparée ne se commente que si sa valeur est montrée.
+  let remarks = [...coverageRemark(t, o, f.key, f.previous !== false && previous != null), ...(f.remark ?? [])].filter((x): x is string => !!x);
+  // Comme l'écran : « partiel » qualifie un chiffre affiché, il disparaît à côté de « Donnée non disponible » (les autres mentions restent).
+  if (current == null) remarks = [t.sourceUnavailable ? "Source indisponible" : "Donnée non disponible", ...remarks.filter((x) => !x.startsWith("partiel"))];
+  const kind = UNIT_KIND[f.unit];
+  return rowOf(
+    { section: f.section, indicator: f.label, unit: UNIT_LABEL[f.unit], period: current, compared: shownPrevious, change, changeUnit, remark: remarks.join(" · ") || null },
+    { period: kind, compared: kind, change: "percent" },
+  );
+}
+
+/** Les deux lignes qui suivent « Abonnés » : la croissance dans la période affichée, en nombre puis en pourcentage. */
+export function followerGrowthRows(section: string, t: RealTotals): ExportRow[] {
+  return [
+    rowOf({ section, indicator: "Évolution des abonnés sur la période", unit: "nombre", period: finite(t.followerGrowth), compared: null, change: null, changeUnit: "", remark: null }, { period: "integer" }),
+    rowOf({ section, indicator: "Évolution des abonnés sur la période (%)", unit: "%", period: finite(t.followerGrowthPercent), compared: null, change: null, changeUnit: "", remark: null }, { period: "percent" }),
+  ];
+}
+
+/** Les colonnes de « Chiffres clés », les mêmes pour l'onglet d'un réseau et pour Global. */
+export const KEY_FIGURE_COLUMNS: ExportColumn[] = [
+  col("section", "Rubrique", "text", 16), col("indicator", "Indicateur", "text", 40), col("unit", "Unité", "text", 8),
+  col("period", "Période", "decimal", 16), col("compared", "Période comparée", "decimal", 18), col("change", "Variation", "percent", 12),
+  col("changeUnit", "Unité de la variation", "text", 14), col("remark", "Remarque", "text", 70),
+];
+
+export function keyFiguresTable(input: DataExportInput, t: RealTotals, o: RealTotals): ExportTable {
   const { data, p, period, comparison } = input;
   const groups: ExportRow[][] = [];
   const sectionRows = new Map<string, ExportRow[]>();
@@ -122,27 +158,10 @@ function keyFiguresTable(input: DataExportInput, t: RealTotals, o: RealTotals): 
     return rows;
   };
   for (const f of figuresFor(p, t, period)) {
-    const current = finite(t[f.key] as number | null | undefined), previous = finite(o[f.key] as number | null | undefined);
-    const shownPrevious = f.previous === false ? null : previous;
-    let change: number | null = null, changeUnit = "";
-    if (f.mode === "plain") change = finite(changePercent(current, previous)) ?? null;
-    else if (f.mode === "scope") change = sameScope(t, o, f.key) ? finite(changePercent(current, previous)) : null;
-    else if (f.mode === "points") change = sameScope(t, o, f.key) && current != null && previous != null ? current - previous : null;
-    if (change != null) changeUnit = f.mode === "points" ? "points" : "%";
-    let remarks = [...coverageRemark(t, o, f.key), ...(f.remark ?? [])].filter((x): x is string => !!x);
-    // Comme l'écran : « partiel » qualifie un chiffre affiché, il disparaît à côté de « Donnée non disponible » (les autres mentions restent).
-    if (current == null) remarks = [t.sourceUnavailable ? "Source indisponible" : "Donnée non disponible", ...remarks.filter((x) => !x.startsWith("partiel"))];
-    const kind = UNIT_KIND[f.unit];
     const rows = rowsOf(f.section);
-    rows.push(rowOf(
-      { section: f.section, indicator: f.label, unit: UNIT_LABEL[f.unit], period: current, compared: shownPrevious, change, changeUnit, remark: remarks.join(" · ") || null },
-      { period: kind, compared: kind, change: "percent" },
-    ));
+    rows.push(figureRow(f, t, o));
     // Évolution des abonnés dans la période affichée (la carte « Abonnés » ne suit pas la comparaison : son écart est cette croissance).
-    if (f.key === "followers") {
-      rows.push(rowOf({ section: f.section, indicator: "Évolution des abonnés sur la période", unit: "nombre", period: finite(t.followerGrowth), compared: null, change: null, changeUnit: "", remark: null }, { period: "integer" }));
-      rows.push(rowOf({ section: f.section, indicator: "Évolution des abonnés sur la période (%)", unit: "%", period: finite(t.followerGrowthPercent), compared: null, change: null, changeUnit: "", remark: null }, { period: "percent" }));
-    }
+    if (f.key === "followers") rows.push(...followerGrowthRows(f.section, t));
     // Stories (Instagram) : entre Engagement et Média, comme à l'écran.
     if (p === "instagram" && f.key === "clicks") {
       const st = storiesTotals(data.stories, data.storyPulls, period, { failed: data.storiesFailed });
@@ -163,11 +182,7 @@ function keyFiguresTable(input: DataExportInput, t: RealTotals, o: RealTotals): 
   }
   return {
     id: "keyFigures", name: "Chiffres clés",
-    columns: [
-      col("section", "Rubrique", "text", 16), col("indicator", "Indicateur", "text", 40), col("unit", "Unité", "text", 8),
-      col("period", "Période", "decimal", 16), col("compared", "Période comparée", "decimal", 18), col("change", "Variation", "percent", 12),
-      col("changeUnit", "Unité de la variation", "text", 14), col("remark", "Remarque", "text", 70),
-    ],
+    columns: KEY_FIGURE_COLUMNS,
     rows: groups.flat(),
   };
 }

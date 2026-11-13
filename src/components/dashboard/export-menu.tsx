@@ -5,7 +5,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import type { PlatformId } from "@/lib/dashboard-data";
 import type { Period } from "@/lib/dashboard-periods";
 import { cn } from "@/lib/utils";
-import type { SocialData } from "./common";
+import type { YoutubeData } from "@/lib/youtube";
+import type { GoogleData, SocialData } from "./common";
 
 /** Télécharge un contenu sous un nom de fichier, par un lien temporaire (aucun envoi : tout se passe dans le navigateur). */
 export function downloadFile(name: string, mime: string, content: BlobPart) {
@@ -21,14 +22,17 @@ export function downloadFile(name: string, mime: string, content: BlobPart) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
+/** Ce que l'onglet Global lit en plus des réseaux (Google Ads, YouTube) : `loading` tient le bouton éteint tant que la lecture YouTube (qui entre dans le total) n'est pas arrivée, pour qu'il n'exporte pas un état transitoire. */
+export type GlobalSources = { google: GoogleData | undefined; youtube: YoutubeData | undefined; youtubeUnavailable: boolean; loading: boolean };
+
 type Format = "xlsx" | "json";
 const FAILED = "Export impossible, réessayez.";
 
 /**
- * Bouton « Exporter » de l'en-tête (activé par `features.dataExport`) : les chiffres de l'onglet réseau affiché, pour la période et la comparaison choisies, en Excel ou en JSON.
+ * Bouton « Exporter » de l'en-tête (activé par `features.dataExport`) : les chiffres de l'onglet affiché (un réseau, ou Global), pour la période et la comparaison choisies, en Excel ou en JSON.
  * Le pictogramme seul, comme « Actualiser » et la bascule de thème à côté de lui ; son nom accessible est « Exporter ». Les constructeurs de fichier ne sont chargés qu'au clic.
  */
-export function ExportMenu({ data, p, period, comparison, className }: { data: SocialData | undefined; p: PlatformId; period: Period; comparison: Period; className?: string }) {
+export function ExportMenu({ data, p, period, comparison, className, global }: { data: SocialData | undefined; p: PlatformId | "overview"; period: Period; comparison: Period; className?: string; global?: GlobalSources | undefined }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const running = useRef(false);
@@ -38,14 +42,22 @@ export function ExportMenu({ data, p, period, comparison, className }: { data: S
     return () => clearTimeout(timer);
   }, [failed]);
 
+  // Global : le bouton attend aussi la lecture YouTube que l'onglet affiche.
+  const ready = !!data && (p !== "overview" || (!!global && !global.loading));
   const run = async (format: Format) => {
-    if (!data || running.current) return;
+    if (!data || !ready || running.current) return;
     running.current = true;
     setBusy(true);
     setFailed(false);
     try {
       const { buildDataExport, exportFileName, exportToJson } = await import("@/lib/data-export");
-      const model = buildDataExport({ data, p, period, comparison });
+      let model;
+      if (p === "overview") {
+        const { buildGlobalExport } = await import("@/lib/data-export-global");
+        model = buildGlobalExport({ data, google: global?.google, youtube: global?.youtube, youtubeUnavailable: global?.youtubeUnavailable ?? false, period, comparison });
+      } else {
+        model = buildDataExport({ data, p, period, comparison });
+      }
       if (format === "xlsx") {
         const { XLSX_MIME, buildXlsx } = await import("@/lib/data-export-xlsx");
         // Une copie dans un ArrayBuffer ordinaire : le type renvoyé par le compresseur peut venir d'un tampon partagé, que Blob n'accepte pas.
@@ -67,7 +79,7 @@ export function ExportMenu({ data, p, period, comparison, className }: { data: S
     <div className={cn("relative", className)}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button type="button" variant="outline" size="icon" className="shadow-none" disabled={!data} aria-busy={busy} aria-label="Exporter">
+          <Button type="button" variant="outline" size="icon" className="shadow-none" disabled={!ready} aria-busy={busy} aria-label="Exporter">
             <Download />
           </Button>
         </DropdownMenuTrigger>

@@ -82,6 +82,12 @@ describe("buildDataExport: the key figures are the ones of the screen", () => {
     expect(table(exportOf("linkedin"), "keyFigures").rows.map((r) => r.values["indicator"])).toContain("Évolution des abonnés sur la période");
   });
 
+  it("does not comment the coverage of the compared period on the followers row, whose comparison is not shown", () => {
+    const model = exportOf("facebook", june, february);
+    expect(String(figure(model, "Abonnés").values["remark"] ?? "")).not.toContain("période comparée");
+    expect(String(figure(model, "Impressions totales").values["remark"] ?? "")).toContain("période comparée partielle");
+  });
+
   it("leaves an unavailable figure empty (never zero) and says why, and marks a partial one", () => {
     // LinkedIn has no organic figures before 05/05/2025: February is partial for the account figures and has no follower count yet.
     const model = exportOf("linkedin", february, { start: "2025-01-01", end: "2025-01-31" });

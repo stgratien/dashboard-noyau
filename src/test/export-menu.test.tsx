@@ -1,8 +1,9 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { SocialData } from "../components/dashboard/common";
-import { ExportMenu } from "../components/dashboard/export-menu";
+import { ExportMenu, type GlobalSources } from "../components/dashboard/export-menu";
 import { coverage, days, posts } from "./fixtures/young-account";
+import { youtubeConnected } from "./fixtures/youtube-account";
 
 vi.mock("@/client/config", async () => (await import("@/test/fixtures/neutral-client")).neutralClientModule({ features: { dataExport: true } }));
 
@@ -38,6 +39,58 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 const readText = (blob: Blob) => new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result)); r.onerror = reject; r.readAsText(blob); });
 const readBytes = (blob: Blob) => new Promise<Uint8Array>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(new Uint8Array(r.result as ArrayBuffer)); r.onerror = reject; r.readAsArrayBuffer(blob); });
 const open = () => fireEvent.keyDown(screen.getByRole("button", { name: "Exporter" }), { key: "Enter" });
+
+const globalReady: GlobalSources = { google: undefined, youtube: undefined, youtubeUnavailable: false, loading: false };
+
+describe("ExportMenu on the Global tab", () => {
+  it("is disabled until the Google Ads and YouTube reads the tab shows have arrived", () => {
+    const { rerender } = render(<ExportMenu data={data} p="overview" period={june} comparison={may} global={{ ...globalReady, loading: true }} />);
+    expect((screen.getByRole("button", { name: "Exporter" }) as HTMLButtonElement).disabled).toBe(true);
+    rerender(<ExportMenu data={data} p="overview" period={june} comparison={may} global={globalReady} />);
+    expect((screen.getByRole("button", { name: "Exporter" }) as HTMLButtonElement).disabled).toBe(false);
+    // Sans lectures fournies, Global n'exporte rien plutôt qu'un total sans ses sources.
+    rerender(<ExportMenu data={data} p="overview" period={june} comparison={may} />);
+    expect((screen.getByRole("button", { name: "Exporter" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("downloads the JSON of the Global tab, named after it, with the total and the per-network figures", async () => {
+    render(<ExportMenu data={data} p="overview" period={june} comparison={may} global={globalReady} />);
+    open();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "JSON (.json)" }));
+    await waitFor(() => expect(downloads).toHaveLength(1));
+    expect(downloads[0]?.name).toBe("DE-Global-juin-2025.json");
+    const json = JSON.parse(await readText(blobs[0]!));
+    expect(json.meta).toMatchObject({ network: "overview", networkName: "Global" });
+    expect(Object.keys(json.sheets)).toEqual(["summary", "keyFigures", "networks"]);
+  });
+
+  it("passes the YouTube read of the tab to the export (YouTube joins the total once connected)", async () => {
+    const followersOf = async (youtube: typeof youtubeConnected | undefined) => {
+      blobs.length = 0;
+      downloads.length = 0;
+      const { unmount } = render(<ExportMenu data={data} p="overview" period={june} comparison={may} global={{ ...globalReady, youtube }} />);
+      open();
+      fireEvent.click(await screen.findByRole("menuitem", { name: "JSON (.json)" }));
+      await waitFor(() => expect(downloads).toHaveLength(1));
+      const json = JSON.parse(await readText(blobs[0]!));
+      unmount();
+      return json.sheets.keyFigures.rows.find((r: { indicator: string }) => r.indicator === "Abonnés").period as number;
+    };
+    const without = await followersOf(undefined);
+    const withYoutube = await followersOf(youtubeConnected);
+    expect(withYoutube).toBeGreaterThan(without);
+  });
+
+  it("downloads an Excel workbook of the Global tab", async () => {
+    render(<ExportMenu data={data} p="overview" period={june} comparison={may} global={globalReady} />);
+    open();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Excel (.xlsx)" }));
+    await waitFor(() => expect(downloads).toHaveLength(1));
+    expect(downloads[0]?.name).toBe("DE-Global-juin-2025.xlsx");
+    const bytes = await readBytes(blobs[0]!);
+    expect(String.fromCharCode(bytes[0]!, bytes[1]!)).toBe("PK");
+  });
+});
 
 describe("ExportMenu", () => {
   it("is an icon button named « Exporter », disabled while there is no data", () => {
