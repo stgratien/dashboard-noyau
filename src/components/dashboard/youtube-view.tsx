@@ -154,7 +154,7 @@ export function YoutubeView({
                   <tr key={x.video_id} className="border-b last:border-0">
                     <td className="py-2 pr-3">
                       <a
-                        href={x.url ?? `https://www.youtube.com/watch?v=${x.video_id}`}
+                        href={`https://www.youtube.com/watch?v=${encodeURIComponent(x.video_id)}`}
                         target="_blank"
                         rel="noreferrer"
                         className="flex items-center gap-3 hover:underline"

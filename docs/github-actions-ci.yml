@@ -3,12 +3,16 @@ on:
   push:
     branches: [main]
   pull_request:
+# Le jeton du workflow ne peut que lire le dépôt.
+permissions:
+  contents: read
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      # Actions épinglées à un commit (et non à une étiquette qui peut être déplacée) : actions/checkout v4.2.2, oven-sh/setup-bun v2.0.2.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76
       - run: bun install --frozen-lockfile
       - name: Type check
         run: bun x tsc --noEmit
@@ -16,3 +20,7 @@ jobs:
         run: bun x vitest run
       - name: Build
         run: bun run build
+      # Avis de sécurité : informatif (les outils de développement en ont beaucoup), il ne bloque pas ; à lire de temps en temps.
+      - name: Dependency advisories
+        run: bun audit --audit-level=high
+        continue-on-error: true

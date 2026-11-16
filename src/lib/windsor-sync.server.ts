@@ -8,6 +8,7 @@ import { adAudienceKey, type AdAudienceDimension } from "@/lib/ad-audience";
 import { STORY_MAX_GAP_MINUTES } from "@/lib/social-stories";
 import type { Json } from "@/integrations/supabase/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { allowedImageType } from "./image-types";
 
 const DAILY: Record<WindsorSource, string[][]> = {
   facebook: [["publisher_platform", "spend", "impressions", "actions_video_view", "actions_post_reaction", "actions_comment", "actions_post", "outbound_clicks_outbound_click"]],
@@ -52,11 +53,12 @@ async function storeThumbnail(source: WindsorSource, path: string, remote: strin
   let result: Response;
   try { result = await fetch(url, { signal: AbortSignal.timeout(12000), redirect: "manual" }); } catch (error) { return { reason: `${url.hostname} : ${failureText(error)}` }; }
   const type = result.headers.get("content-type") ?? "";
-  if (!result.ok || !type.startsWith("image/")) return { reason: `${url.hostname} HTTP ${result.status} ${type || "sans type"}` };
+  const imageType = allowedImageType(type);
+  if (!result.ok || !imageType) return { reason: `${url.hostname} HTTP ${result.status} ${type || "sans type"}` };
   try {
     const data = await result.arrayBuffer();
     if (data.byteLength > 10_000_000) return { reason: "image de plus de 10 Mo" };
-    const saved = await db.storage.from(THUMBNAIL_BUCKET).upload(path, data, { contentType: type, upsert: true });
+    const saved = await db.storage.from(THUMBNAIL_BUCKET).upload(path, data, { contentType: imageType, upsert: true });
     return saved.error ? { reason: `stockage refusé : ${failureText(saved.error)}` } : { path };
   } catch (error) { return { reason: `${url.hostname} : ${failureText(error)}` }; }
 }
@@ -647,10 +649,11 @@ async function storeImage(path: string, remote: string) {
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(12000), redirect: "manual" });
     const type = r.headers.get("content-type") ?? "";
-    if (!r.ok || !type.startsWith("image/")) return null;
+    const imageType = allowedImageType(type);
+    if (!r.ok || !imageType) return null;
     const data = await r.arrayBuffer();
     if (data.byteLength > 10_000_000) return null;
-    const saved = await db.storage.from(THUMBNAIL_BUCKET).upload(path, data, { contentType: type, upsert: true });
+    const saved = await db.storage.from(THUMBNAIL_BUCKET).upload(path, data, { contentType: imageType, upsert: true });
     return saved.error ? null : path;
   } catch { return null; }
 }

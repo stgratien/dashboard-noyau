@@ -1,6 +1,7 @@
 import { supabaseAdmin as db } from '@/integrations/supabase/client.server';
 import { THUMBNAIL_BUCKET } from './windsor-config';
 import type { YoutubePayload, YoutubeData } from './youtube';
+import { allowedImageType } from './image-types';
 
 const num = (v: unknown) => v == null ? null : Number(v);
 /** Server-only read of YouTube tables (no browser grants); thumbnails as short-lived signed URLs. */
@@ -30,11 +31,12 @@ async function storeThumbnail(videoId: string, remote: string | null | undefined
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(10000), redirect: 'manual' });
     const type = r.headers.get('content-type') ?? '';
-    if (!r.ok || !type.startsWith('image/')) return null;
+    const imageType = allowedImageType(type);
+    if (!r.ok || !imageType) return null;
     const data = await r.arrayBuffer();
     if (data.byteLength > 10_000_000) return null;
     const path = `youtube/${encodeURIComponent(videoId)}.image`;
-    const saved = await db.storage.from(THUMBNAIL_BUCKET).upload(path, data, { contentType: type, upsert: true });
+    const saved = await db.storage.from(THUMBNAIL_BUCKET).upload(path, data, { contentType: imageType, upsert: true });
     return saved.error ? null : path;
   } catch { return null; }
 }

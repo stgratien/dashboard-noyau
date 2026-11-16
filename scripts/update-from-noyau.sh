@@ -37,3 +37,7 @@ else
   git commit -m "Import du noyau ($REF)" || true
 fi
 echo "Noyau appliqué. Si le noyau a ajouté une migration SQL, rejouez-la dans le projet du client."
+# Le fichier de verrouillage doit rester d'accord avec package.json après une fusion (sinon le CI et l'hébergeur installent autre chose que ce qui est testé).
+if command -v bun >/dev/null 2>&1 && ! bun install --frozen-lockfile >/dev/null 2>&1; then
+  echo "Attention : bun.lock n'est pas d'accord avec package.json. Lancez « bun install », relancez les tests, puis validez bun.lock." >&2
+fi

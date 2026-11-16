@@ -197,11 +197,17 @@ export const resetSocialDataCache = () => cache.clear();
  * Les données ne changent qu'à la synchronisation (une fois par nuit) : le résultat d'une même demande est gardé 2 minutes
  * (SOCIAL_DATA_CACHE_MS, 0 pour désactiver) afin de ne pas relire tout l'historique à chaque changement de période.
  */
+const FORCED_REFRESH_MIN_MS = 10_000;
+let lastForcedRefreshAt = 0;
 export async function loadSocialData(data: { period: PeriodInput; comparison: PeriodInput; fresh?: boolean | undefined }) {
   const ttl = Number(process.env['SOCIAL_DATA_CACHE_MS'] ?? 120_000);
   const key = JSON.stringify([data.period, data.comparison]);
   const hit = cache.get(key);
-  if (!data.fresh && ttl > 0 && hit && Date.now() - hit.at < ttl) return hit.value;
+  // « Actualiser » contourne le cache, mais pas plus d'une fois toutes les 10 secondes par instance : une boucle d'appels anonymes avec fresh ne peut pas relire l'historique en continu.
+  const now = Date.now();
+  const fresh = Boolean(data.fresh) && now - lastForcedRefreshAt >= FORCED_REFRESH_MIN_MS;
+  if (fresh) lastForcedRefreshAt = now;
+  if (!fresh && ttl > 0 && hit && now - hit.at < ttl) return hit.value;
   let value: Awaited<ReturnType<typeof computeSocialData>>;
   try {
     value = await computeSocialData({ period: data.period, comparison: data.comparison });

@@ -13,9 +13,13 @@ let lastSweepAt = 0;
 
 /** Supprime les images temporaires de plus d'une heure (appelé depuis les dépôts : pas de tâche planifiée à prévoir). */
 async function sweep(now = Date.now()) {
-  const listed = await db.storage.from(THUMBNAIL_BUCKET).list(PREFIX.slice(0, -1), { limit: 200, sortBy: { column: 'created_at', order: 'asc' } });
-  const old = (listed.data ?? []).filter((o) => o.created_at && now - Date.parse(o.created_at) > MAX_AGE_MS).map((o) => `${PREFIX}${o.name}`);
-  if (old.length) await db.storage.from(THUMBNAIL_BUCKET).remove(old);
+  // Les plus anciens d'abord, 200 par tour ; on recommence tant qu'un tour était plein (un afflux de dépôts ne laisse pas un retard qui grossit), 5 tours au plus par passage.
+  for (let round = 0; round < 5; round++) {
+    const listed = await db.storage.from(THUMBNAIL_BUCKET).list(PREFIX.slice(0, -1), { limit: 200, sortBy: { column: 'created_at', order: 'asc' } });
+    const old = (listed.data ?? []).filter((o) => o.created_at && now - Date.parse(o.created_at) > MAX_AGE_MS).map((o) => `${PREFIX}${o.name}`);
+    if (old.length) await db.storage.from(THUMBNAIL_BUCKET).remove(old);
+    if (old.length < 200) break;
+  }
 }
 
 /**

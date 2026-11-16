@@ -6,12 +6,17 @@ import type { GoogleAdsRow } from './google-ads';
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(d => { const t = new Date(`${d}T00:00:00Z`); return !Number.isNaN(t.getTime()) && t.toISOString().slice(0, 10) === d; }, 'Date invalide');
 const n = z.number().finite().min(0);
 const nn = n.nullable().optional();
+/** Adresse de vidéo conservée seulement si c'est une adresse https de youtube.com ou youtu.be ; toute autre valeur devient null (une adresse étrange ne fait pas rejeter toute la nuit d'ingestion). */
+export function youtubeUrlOrNull(u: unknown): string | null {
+  if (typeof u !== 'string' || u.length > 500) return null;
+  try { const x = new URL(u); return x.protocol === 'https:' && ['youtube.com', 'youtu.be'].some(h => x.hostname === h || x.hostname.endsWith(`.${h}`)) ? u : null; } catch { return null; }
+}
 export const YOUTUBE_MAX_DAYS = 400, YOUTUBE_MAX_VIDEOS = 150;
 export const youtubePayload = z.object({
   channel_id: z.string().trim().min(1).max(64), channel_title: z.string().max(300).default(''),
   snapshot_date: isoDate, subscriber_count: n, video_count: nn,
   days: z.array(z.object({ date: isoDate, views: nn, minutes_watched: nn, avg_view_duration_s: nn, subscribers_gained: nn, subscribers_lost: nn, likes: nn, comments: nn, shares: nn }).strict()).max(YOUTUBE_MAX_DAYS),
-  videos: z.array(z.object({ video_id: z.string().trim().min(1).max(64), published_at: z.string().datetime({ offset: true }), title: z.string().max(500).default(''), url: z.string().url().max(500).nullable().optional(), thumbnail_url: z.string().url().max(1000).nullable().optional(), duration: z.string().max(40).nullable().optional(), views: nn, likes: nn, comments: nn }).strict()).max(YOUTUBE_MAX_VIDEOS),
+  videos: z.array(z.object({ video_id: z.string().trim().min(1).max(64), published_at: z.string().datetime({ offset: true }), title: z.string().max(500).default(''), url: z.unknown().transform(u => youtubeUrlOrNull(u)).optional(), thumbnail_url: z.string().url().max(1000).nullable().optional(), duration: z.string().max(40).nullable().optional(), views: nn, likes: nn, comments: nn }).strict()).max(YOUTUBE_MAX_VIDEOS),
 }).strict();
 export type YoutubePayload = z.infer<typeof youtubePayload>;
 

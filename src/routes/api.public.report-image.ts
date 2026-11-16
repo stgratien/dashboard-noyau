@@ -9,11 +9,12 @@ export const Route = createFileRoute("/api/public/report-image")({
   server: { handlers: { POST: async ({ request }) => {
     const server = await import("@/lib/report-image.server");
     const token = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+    // Les contrôles qui ne coûtent rien passent avant l'appel à Google : forme du jeton (dans googleTokenAllowed) et taille annoncée.
+    const declared = Number(request.headers.get("content-length") ?? 0);
+    if (declared > server.REPORT_IMAGE_MAX_BYTES) return Response.json({ error: "Image trop lourde" }, { status: 413 });
     const began = Date.now();
     if (!(await server.googleTokenAllowedCached(token, GOOGLE_REPORT.clientId))) return new Response(null, { status: 401 });
     const tokenMs = Date.now() - began;
-    const declared = Number(request.headers.get("content-length") ?? 0);
-    if (declared > server.REPORT_IMAGE_MAX_BYTES) return Response.json({ error: "Image trop lourde" }, { status: 413 });
     const bytes = new Uint8Array(await request.arrayBuffer());
     if (bytes.length > server.REPORT_IMAGE_MAX_BYTES) return Response.json({ error: "Image trop lourde" }, { status: 413 });
     if (!server.isPng(bytes)) return Response.json({ error: "PNG attendu" }, { status: 415 });
